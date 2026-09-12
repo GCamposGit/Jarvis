@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jarvis — Assistente Pessoal de Produtividade</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b',
+              950: '#022c22',
+            },
+            surface: {
+              800: '#1e293b',
+              850: '#162032',
+              900: '#0f172a',
+              950: '#020617',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.15); opacity: 0.4; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .recording-pulse {
+      animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="bg-surface-950 text-slate-100 h-full flex flex-col font-sans antialiased select-none">
+
+  <!-- Top Navigation Header -->
+  <header class="bg-surface-900/80 backdrop-blur border-b border-slate-800 px-5 py-3 flex items-center justify-between shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 font-bold text-white tracking-wider text-sm">
+        J
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-semibold tracking-tight text-white text-base">Jarvis</h1>
+          <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-semibold">v0.1.0</span>
+        </div>
+        <p class="text-[11px] text-slate-400">Assistente Pessoal • Segundo Cérebro &amp; Dark Factory</p>
+      </div>
+    </div>
+
+    <!-- Status Hub Badges -->
+    <div class="flex items-center gap-4 text-xs">
+      <div id="darkhub-status" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="darkhub-dot"></span>
+        <span class="text-slate-300 font-mono text-[11px]" id="darkhub-text">DarkHub: Conectando...</span>
+      </div>
+
+      <div id="ollama-status" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60">
+        <span class="w-2 h-2 rounded-full bg-slate-400" id="ollama-dot"></span>
+        <span class="text-slate-300 font-mono text-[11px]" id="ollama-text">Ollama: Verificando...</span>
+      </div>
+
+      <!-- Model Selector -->
+      <div class="flex items-center gap-2">
+        <label for="model-selector" class="text-slate-400 text-xs hidden sm:inline">Modelo:</label>
+        <select id="model-selector" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 font-mono">
+          <option value="qwen2.5-coder:latest|ollama">Ollama (Local $0) — qwen2.5-coder</option>
+          <option value="google/gemini-2.5-flash|openrouter" selected>OpenRouter — Gemini 2.5 Flash</option>
+          <option value="anthropic/claude-3.7-sonnet|openrouter">OpenRouter — Claude 3.7 Sonnet</option>
+          <option value="deepseek/deepseek-r1|openrouter">OpenRouter — DeepSeek R1</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Body: Split View (Chat + Sidebar) -->
+  <div class="flex-1 flex overflow-hidden">
+    
+    <!-- Central Chat Stream -->
+    <main class="flex-1 flex flex-col overflow-hidden relative">
+      
+      <!-- Messages Container -->
+      <div id="messages-stream" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        <!-- Welcome banner -->
+        <div class="max-w-2xl mx-auto my-6 p-5 rounded-2xl bg-gradient-to-b from-surface-850 to-surface-900 border border-slate-800 shadow-xl">
+          <div class="flex items-start gap-4">
+            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 text-lg">
+              ✨
+            </div>
+            <div>
+              <h2 class="text-sm font-semibold text-white">Jarvis Online &amp; Pronto</h2>
+              <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                Você pode interagir por <strong>voz ou texto</strong>. O áudio é transcrito localmente a custo zero via <code class="text-emerald-400">faster-whisper</code> (com fallback automático para nuvem se a qualidade for baixa). Posso pesquisar no seu <strong>Segundo Cérebro</strong> e registrar tickets diretamente na <strong>Dark Factory</strong>.
+              </p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button onclick="quickPrompt('Qual é o status da Dark Factory e do DarkHub na nuvem?')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                  ⚡ Status da Dark Factory
+                </button>
+                <button onclick="quickPrompt('Pesquise no segundo cérebro sobre os últimos tópicos arquivados')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                  🧠 Buscar no Segundo Cérebro
+                </button>
+                <button onclick="openNewDemandModal()" class="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/60 transition">
+                  📝 Criar Demanda DarkHub
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audio Recording Banner (hidden by default) -->
+      <div id="recording-banner" class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 bg-red-950/90 border border-red-500/40 px-5 py-2.5 rounded-full backdrop-blur shadow-2xl flex items-center gap-3 z-30">
+        <div class="w-3 h-3 rounded-full bg-red-500 recording-pulse"></div>
+        <span class="text-xs font-mono text-red-200">Gravando áudio do microfone...</span>
+        <button id="btn-stop-recording" class="text-[11px] px-2 py-0.5 rounded bg-red-800 hover:bg-red-700 text-white font-semibold transition">
+          Parar e Enviar
+        </button>
+      </div>
+
+      <!-- Bottom Input Controls -->
+      <div class="p-4 bg-surface-900/90 border-t border-slate-800 backdrop-blur shrink-0">
+        <div class="max-w-4xl mx-auto flex items-end gap-3">
+          
+          <!-- Audio Mic Toggle Button -->
+          <button id="btn-mic" type="button" title="Gravar voz" class="w-11 h-11 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0 transition shadow-sm">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 02-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+            </svg>
+          </button>
+
+          <!-- Text Input Area -->
+          <div class="flex-1 bg-surface-850 rounded-xl border border-slate-700/80 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/30 transition p-2 flex items-center gap-2">
+            <textarea id="user-input" rows="1" placeholder="Converse com o Jarvis ou dite sua instrução..." class="w-full bg-transparent text-sm text-slate-100 placeholder-slate-500 focus:outline-none resize-none max-h-32 px-1"></textarea>
+            
+            <button id="btn-send" type="button" class="w-9 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white flex items-center justify-center shrink-0 transition shadow">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+              </svg>
+            </button>
+          </div>
+
+        </div>
+        <div class="max-w-4xl mx-auto mt-2 flex items-center justify-between text-[11px] text-slate-500 px-1">
+          <span>Pressione <kbd class="px-1 py-0.5 bg-slate-800 rounded text-slate-400 font-mono text-[10px]">Enter</kbd> para enviar, <kbd class="px-1 py-0.5 bg-slate-800 rounded text-slate-400 font-mono text-[10px]">Shift+Enter</kbd> para pular linha</span>
+          <span id="transcription-indicator" class="text-emerald-400 font-mono"></span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Collapsible Sidebar (DarkHub Backlog & MCP Tools) -->
+    <aside class="w-80 bg-surface-900 border-l border-slate-800 flex flex-col overflow-hidden hidden lg:flex">
+      
+      <!-- Tab Header -->
+      <div class="p-3 border-b border-slate-800 flex gap-2 text-xs">
+        <button id="tab-btn-darkhub" class="flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700">
+          DarkHub Tickets
+        </button>
+        <button id="tab-btn-mcp" class="flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition">
+          MCP Tools (<span id="mcp-count">3</span>)
+        </button>
+      </div>
+
+      <!-- Tab Content: DarkHub Demands -->
+      <div id="tab-darkhub" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <div class="flex items-center justify-between px-1 mb-2">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Backlog da Fábrica</span>
+          <button onclick="refreshDemands()" class="text-[11px] text-emerald-400 hover:underline">Atualizar</button>
+        </div>
+        <div id="demands-list" class="space-y-2 text-xs">
+          <!-- Loaded dynamically -->
+          <div class="p-3 rounded-xl bg-slate-800/40 border border-slate-800 text-slate-400 text-center text-xs">
+            Carregando demandas...
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Content: MCP Tools (hidden by default) -->
+      <div id="tab-mcp" class="flex-1 overflow-y-auto p-3 space-y-2.5 hidden">
+        <div class="px-1 mb-2">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Ferramentas Ativas (MCP)</span>
+        </div>
+        <div id="mcp-tools-list" class="space-y-2 text-xs">
+          <!-- Loaded dynamically -->
+        </div>
+      </div>
+
+      <!-- Sidebar Footer Action -->
+      <div class="p-3 border-t border-slate-800 bg-surface-950/40">
+        <button onclick="openNewDemandModal()" class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-xs shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-1.5 transition">
+          <span>+</span> Nova Demanda para Dark Factory
+        </button>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Modal: Nova Demanda DarkHub -->
+  <div id="modal-demand" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-surface-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h3 class="font-semibold text-white text-sm">Criar Demanda na Dark Factory</h3>
+        <button onclick="closeNewDemandModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+      <form id="form-demand" class="p-5 space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Projeto Alvo</label>
+          <select id="demand-project" class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-emerald-500 font-mono">
+            <option value="jarvis">jarvis (Assistente)</option>
+            <option value="darkfac" selected>darkfac (Fábrica Central)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Título da Demanda *</label>
+          <input id="demand-title" type="text" required placeholder="Ex: Integrar busca semântica no banco vetorial" class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Declaração do Problema / Objetivo</label>
+          <textarea id="demand-problem" rows="3" placeholder="Qual dor ou necessidade essa entrega soluciona?" class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-emerald-500"></textarea>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button type="button" onclick="closeNewDemandModal()" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">Cancelar</button>
+          <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">Registrar Demanda</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

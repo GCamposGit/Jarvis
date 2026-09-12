@@ -1,10 +1,25 @@
 [project]
 name = "jarvis"
 version = "0.1.0"
-description = "Jarvis - Autonomous System"
+description = "Jarvis - Autonomous Personal Productivity Assistant"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "pydantic>=2.7.0",
+    "httpx>=0.27.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+audio-local = [
+    "faster-whisper>=1.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "anyio>=4.0.0",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]
