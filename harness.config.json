@@ -1,0 +1,11 @@
+{
+  "steps": [
+    {
+      "name": "project_validation_1",
+      "cmd": "python -m pytest tests",
+      "quick": true,
+      "kind": "test",
+      "timeout_sec": 600
+    }
+  ]
+}
