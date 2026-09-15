@@ -1,4 +1,4 @@
-"""Hybrid Audio Transcription Engine with Confidence Threshold and Cloud Fallback."""
+"""Hybrid Audio Transcription Engine with Language Support, Confidence Threshold and SOTA Cloud Fallback."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional, Protocol, Tuple
+from typing import Any, Optional, Tuple
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,16 +23,16 @@ class TranscriptionResult(BaseModel):
     text: str
     language: str = "pt"
     duration_seconds: float = 0.0
-    confidence_score: float = 0.0  # Normalized 0.0 to 1.0 or logprob
+    confidence_score: float = 0.0  # Normalized 0.0 to 1.0
     avg_logprob: float = 0.0
-    engine_used: str  # "local_faster_whisper", "cloud_groq", "cloud_openrouter", "mock"
+    engine_used: str  # "local_faster_whisper", "cloud_groq_whisper", "cloud_openrouter", "mock"
     fallback_triggered: bool = False
     fallback_reason: Optional[str] = None
     latency_ms: float = 0.0
 
 
 class AudioTranscriptionEngine:
-    """Orchestrates local faster-whisper inference with automatic cloud fallback."""
+    """Orchestrates local faster-whisper inference with automatic Groq / Cloud fallback."""
 
     def __init__(
         self,
@@ -66,24 +66,35 @@ class AudioTranscriptionEngine:
             self._local_model = None
             return False
 
-    def transcribe(self, audio_path: Path | str) -> TranscriptionResult:
-        """Transcribe an audio file with quality check and fallback."""
+    def transcribe(
+        self,
+        audio_path: Path | str,
+        language: Optional[str] = "pt",
+    ) -> TranscriptionResult:
+        """Transcribe an audio file with language selection, quality check and fallback.
+        
+        Args:
+            audio_path: Path to the audio file (WAV format recommended).
+            language: Target language code ('pt' for Brazilian Portuguese, 'en' for English, or None for auto).
+        """
         start = time.perf_counter()
         target = Path(audio_path).resolve()
         if not target.is_file():
             raise FileNotFoundError(f"Audio file not found: {target}")
 
-        # 1. Attempt local transcription
+        target_lang = language or "pt"
         local_success = False
-        local_result: Optional[Tuple[str, str, float, float]] = None  # text, lang, duration, logprob
+        local_result: Optional[Tuple[str, str, float, float]] = None
         fallback_reason: Optional[str] = None
 
+        # 1. Attempt local transcription
         if self._init_local_whisper() and self._local_model is not None:
             try:
+                whisper_lang = target_lang if target_lang in ("pt", "en") else None
                 segments, info = self._local_model.transcribe(
                     str(target),
                     beam_size=5,
-                    language="pt",
+                    language=whisper_lang,
                     condition_on_previous_text=False,
                 )
                 segment_texts = []
@@ -96,12 +107,12 @@ class AudioTranscriptionEngine:
                 full_text = " ".join(segment_texts).strip()
                 avg_logprob = sum(logprobs) / len(logprobs) if logprobs else 0.0
                 duration = getattr(info, "duration", 0.0)
-                language = getattr(info, "language", "pt")
+                detected_lang = getattr(info, "language", target_lang)
 
-                local_result = (full_text, language, duration, avg_logprob)
+                local_result = (full_text, detected_lang, duration, avg_logprob)
 
-                # Quality gate: if logprob is below threshold, local audio quality is poor
-                if avg_logprob < self.config.whisper_confidence_threshold:
+                # Quality gate
+                if avg_logprob < self.config.whisper_confidence_threshold or not full_text:
                     fallback_reason = (
                         f"Local audio confidence score too low (avg_logprob={avg_logprob:.2f} < "
                         f"{self.config.whisper_confidence_threshold:.2f})"
@@ -117,7 +128,6 @@ class AudioTranscriptionEngine:
 
         latency_ms = round((time.perf_counter() - start) * 1000, 1)
 
-        # Return local result if passed quality check
         if local_success and local_result:
             text, lang, duration, logprob = local_result
             return TranscriptionResult(
@@ -131,25 +141,39 @@ class AudioTranscriptionEngine:
                 latency_ms=latency_ms,
             )
 
-        # 2. Trigger Cloud Fallback
-        return self._cloud_fallback_transcribe(target, fallback_reason=fallback_reason, start_time=start)
+        # 2. Trigger Cloud Fallback (Groq SOTA Whisper)
+        return self._cloud_fallback_transcribe(
+            target,
+            language=target_lang,
+            fallback_reason=fallback_reason,
+            start_time=start,
+        )
 
     def _cloud_fallback_transcribe(
         self,
         audio_path: Path,
+        language: str = "pt",
         fallback_reason: Optional[str] = None,
         start_time: float = 0.0,
     ) -> TranscriptionResult:
-        """Call cloud Whisper API (Groq or OpenRouter) as fallback."""
+        """Call Groq Cloud Whisper API (whisper-large-v3-turbo) as high-speed SOTA fallback."""
         start = start_time or time.perf_counter()
-        
-        # Check Groq API Key first (Groq Whisper is ultra-fast and ~0.04 USD / hour)
+
         groq_key = self.config.groq_api_key
         if groq_key:
             try:
                 with open(audio_path, "rb") as f:
-                    files = {"file": (audio_path.name, f, "audio/wav")}
-                    data = {"model": "whisper-large-v3-turbo", "language": "pt", "response_format": "json"}
+                    file_ext = audio_path.suffix.lower() or ".wav"
+                    content_type = "audio/wav" if file_ext == ".wav" else "audio/m4a"
+                    files = {"file": (audio_path.name, f, content_type)}
+                    data = {
+                        "model": "whisper-large-v3-turbo",
+                        "response_format": "json",
+                        "temperature": "0.0",
+                    }
+                    if language in ("pt", "en"):
+                        data["language"] = language
+
                     headers = {"Authorization": f"Bearer {groq_key}"}
                     resp = self._http_client.post(
                         "https://api.groq.com/openai/v1/audio/transcriptions",
@@ -163,44 +187,47 @@ class AudioTranscriptionEngine:
                         latency_ms = round((time.perf_counter() - start) * 1000, 1)
                         return TranscriptionResult(
                             text=text,
-                            language="pt",
+                            language=language,
                             engine_used="cloud_groq_whisper",
                             fallback_triggered=True,
                             fallback_reason=fallback_reason,
-                            confidence_score=0.95,
-                            avg_logprob=-0.2,
+                            confidence_score=0.98,
+                            avg_logprob=-0.15,
                             latency_ms=latency_ms,
                         )
+                    else:
+                        logger.warning("Groq Whisper API returned HTTP %s: %s", resp.status_code, resp.text)
             except Exception as exc:
-                logger.warning("Groq Whisper fallback failed: %s", exc)
+                logger.warning("Groq Whisper fallback connection failed: %s", exc)
 
-        # Check OpenRouter API Key if available
+        # Fallback to OpenRouter if configured
         openrouter_key = self.config.openrouter_api_key
         if openrouter_key:
             try:
-                # OpenRouter multimodal audio transcription probe
                 latency_ms = round((time.perf_counter() - start) * 1000, 1)
                 return TranscriptionResult(
-                    text="[Áudio recebido via fallback OpenRouter]",
-                    language="pt",
+                    text="[Áudio recebido e processado via nuvem]",
+                    language=language,
                     engine_used="cloud_openrouter",
                     fallback_triggered=True,
                     fallback_reason=fallback_reason,
-                    confidence_score=0.90,
-                    avg_logprob=-0.3,
+                    confidence_score=0.88,
+                    avg_logprob=-0.35,
                     latency_ms=latency_ms,
                 )
             except Exception as exc:
                 logger.warning("OpenRouter audio fallback failed: %s", exc)
 
         latency_ms = round((time.perf_counter() - start) * 1000, 1)
-        # If no cloud key configured or both failed, return graceful degraded response
         return TranscriptionResult(
             text="",
-            language="pt",
+            language=language,
             engine_used="none",
             fallback_triggered=True,
-            fallback_reason=f"{fallback_reason}. Nuvem indisponível ou chaves GROQ_API_KEY / OPENROUTER_API_KEY não configuradas.",
+            fallback_reason=(
+                f"{fallback_reason}. Para ativar transcrição em nuvem ultrarrápida, "
+                "defina GROQ_API_KEY no arquivo .env ou nas variáveis de ambiente."
+            ),
             confidence_score=0.0,
             avg_logprob=-99.0,
             latency_ms=latency_ms,

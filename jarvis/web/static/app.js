@@ -1,14 +1,28 @@
 /**
- * Jarvis Web GUI Controller (Vanilla JS + Web Audio API)
+ * Jarvis Web GUI Controller (Dual-Engine Voice: Real-Time Web Speech + 16kHz PCM WAV Fallback)
  */
 
 let chatHistory = [];
-let mediaRecorder = null;
-let audioChunks = [];
+let currentLang = 'pt-BR'; // 'pt-BR' or 'en-US'
 let isRecording = false;
+
+// Web Speech API instances
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let finalSpeechTranscript = '';
+
+// Web Audio API fallback instances
+let audioContext = null;
+let mediaStream = null;
+let audioInput = null;
+let scriptProcessor = null;
+let recordedPcmBuffers = [];
+let recordingSampleRate = 16000;
 
 document.addEventListener('DOMContentLoaded', () => {
   initUI();
+  initLanguageSelector();
+  initSpeechRecognition();
   checkHealth();
   refreshDemands();
   loadMCPTools();
@@ -35,9 +49,9 @@ function initUI() {
     }
   });
 
-  btnSend.addEventListener('click', sendMessage);
-  btnMic.addEventListener('click', toggleRecording);
-  btnStopRecording.addEventListener('click', stopRecording);
+  btnSend.addEventListener('click', () => sendMessage());
+  btnMic.addEventListener('click', toggleVoiceDictation);
+  btnStopRecording.addEventListener('click', stopVoiceDictation);
 
   // Tabs
   document.getElementById('tab-btn-darkhub').addEventListener('click', () => switchTab('darkhub'));
@@ -47,59 +61,294 @@ function initUI() {
   document.getElementById('form-demand').addEventListener('submit', handleDemandSubmit);
 }
 
-function switchTab(tab) {
-  const tabDarkhub = document.getElementById('tab-darkhub');
-  const tabMcp = document.getElementById('tab-mcp');
-  const btnDarkhub = document.getElementById('tab-btn-darkhub');
-  const btnMcp = document.getElementById('tab-btn-mcp');
+function initLanguageSelector() {
+  const btnPt = document.getElementById('lang-btn-pt');
+  const btnEn = document.getElementById('lang-btn-en');
 
-  if (tab === 'darkhub') {
-    tabDarkhub.classList.remove('hidden');
-    tabMcp.classList.add('hidden');
-    btnDarkhub.className = 'flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700';
-    btnMcp.className = 'flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition';
+  btnPt.addEventListener('click', () => setLanguage('pt-BR'));
+  btnEn.addEventListener('click', () => setLanguage('en-US'));
+}
+
+function setLanguage(lang) {
+  currentLang = lang;
+  const btnPt = document.getElementById('lang-btn-pt');
+  const btnEn = document.getElementById('lang-btn-en');
+
+  if (lang === 'pt-BR') {
+    btnPt.className = 'px-2 py-1 rounded bg-emerald-600 text-white font-semibold transition';
+    btnEn.className = 'px-2 py-1 rounded text-slate-400 hover:text-white transition';
   } else {
-    tabDarkhub.classList.add('hidden');
-    tabMcp.classList.remove('hidden');
-    btnMcp.className = 'flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700';
-    btnDarkhub.className = 'flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition';
+    btnEn.className = 'px-2 py-1 rounded bg-emerald-600 text-white font-semibold transition';
+    btnPt.className = 'px-2 py-1 rounded text-slate-400 hover:text-white transition';
+  }
+
+  if (recognition) {
+    recognition.lang = currentLang;
+  }
+
+  const indicator = document.getElementById('transcription-indicator');
+  indicator.innerText = `Idioma de voz: ${lang === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}`;
+  setTimeout(() => { indicator.innerText = ''; }, 2500);
+}
+
+function initSpeechRecognition() {
+  if (!SpeechRecognition) {
+    console.warn('Web Speech API not supported natively in this browser; falling back to Web Audio PCM WAV.');
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = currentLang;
+
+  recognition.onstart = () => {
+    isRecording = true;
+    finalSpeechTranscript = '';
+    document.getElementById('recording-banner').classList.remove('hidden');
+    document.getElementById('btn-mic').classList.add('bg-red-600', 'text-white', 'recording-pulse');
+    document.getElementById('transcription-indicator').innerText = `🎙️ Ouvindo em tempo real (${currentLang})...`;
+  };
+
+  recognition.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalSpeechTranscript += event.results[i][0].transcript + ' ';
+      } else {
+        interim += event.results[i][0].transcript;
+      }
+    }
+
+    const fullLiveText = (finalSpeechTranscript + interim).trim();
+    const userInput = document.getElementById('user-input');
+    userInput.value = fullLiveText;
+    userInput.style.height = 'auto';
+    userInput.style.height = Math.min(userInput.scrollHeight, 128) + 'px';
+  };
+
+  recognition.onerror = (event) => {
+    console.warn('SpeechRecognition error:', event.error);
+    if (event.error === 'not-allowed') {
+      alert('Permissão de microfone negada. Por favor, autorize o microfone no navegador.');
+      stopVoiceDictation();
+    } else if (event.error === 'network') {
+      console.info('Web Speech network issue; switching to local PCM WAV fallback.');
+      stopVoiceDictation();
+      startWebAudioRecordingFallback();
+    }
+  };
+
+  recognition.onend = () => {
+    if (isRecording) {
+      // If still supposed to be recording, restart seamlessly
+      try {
+        recognition.start();
+      } catch (e) {
+        stopVoiceDictation();
+      }
+    } else {
+      stopVoiceDictation();
+    }
+  };
+}
+
+function toggleVoiceDictation() {
+  if (isRecording) {
+    stopVoiceDictation();
+  } else {
+    startVoiceDictation();
   }
 }
 
-async function checkHealth() {
+function startVoiceDictation() {
+  finalSpeechTranscript = document.getElementById('user-input').value.trim();
+  if (finalSpeechTranscript) finalSpeechTranscript += ' ';
+
+  if (SpeechRecognition && recognition) {
+    try {
+      recognition.lang = currentLang;
+      recognition.start();
+      return;
+    } catch (err) {
+      console.warn('Could not start Web Speech, falling back to Web Audio WAV:', err);
+    }
+  }
+
+  // Fallback to Web Audio WAV encoder
+  startWebAudioRecordingFallback();
+}
+
+function stopVoiceDictation() {
+  isRecording = false;
+
+  if (recognition) {
+    try { recognition.stop(); } catch (e) {}
+  }
+
+  if (mediaStream) {
+    stopWebAudioRecordingFallback();
+  }
+
+  document.getElementById('recording-banner').classList.add('hidden');
+  document.getElementById('btn-mic').classList.remove('bg-red-600', 'text-white', 'recording-pulse');
+  document.getElementById('transcription-indicator').innerText = '';
+}
+
+// ==============================================================================
+// Web Audio API (PCM 16kHz WAV Fallback - No FFmpeg required on server)
+// ==============================================================================
+
+async function startWebAudioRecordingFallback() {
   try {
-    const res = await fetch('/api/health');
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    audioInput = audioContext.createMediaStreamSource(mediaStream);
+    
+    // Script processor for capturing PCM float32 samples
+    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    recordedPcmBuffers = [];
+
+    scriptProcessor.onaudioprocess = (e) => {
+      if (!isRecording) return;
+      const channelData = e.inputBuffer.getChannelData(0);
+      recordedPcmBuffers.push(new Float32Array(channelData));
+    };
+
+    audioInput.connect(scriptProcessor);
+    scriptProcessor.connect(audioContext.destination);
+
+    isRecording = true;
+    document.getElementById('recording-banner').classList.remove('hidden');
+    document.getElementById('btn-mic').classList.add('bg-red-600', 'text-white', 'recording-pulse');
+    document.getElementById('transcription-indicator').innerText = '🎙️ Gravando áudio WAV PCM...';
+  } catch (err) {
+    alert(`Erro ao acessar microfone: ${err.message}`);
+    stopVoiceDictation();
+  }
+}
+
+async function stopWebAudioRecordingFallback() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
+  if (scriptProcessor) {
+    scriptProcessor.disconnect();
+    scriptProcessor = null;
+  }
+  if (audioInput) {
+    audioInput.disconnect();
+    audioInput = null;
+  }
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+
+  if (recordedPcmBuffers.length === 0) return;
+
+  // Flatten Float32Array buffers
+  let totalLength = recordedPcmBuffers.reduce((acc, b) => acc + b.length, 0);
+  let mergedPcm = new Float32Array(totalLength);
+  let offset = 0;
+  for (let b of recordedPcmBuffers) {
+    mergedPcm.set(b, offset);
+    offset += b.length;
+  }
+
+  // Encode as standard 16-bit Mono 16kHz WAV
+  const wavBlob = encode16BitWav(mergedPcm, 16000);
+  recordedPcmBuffers = [];
+
+  // Upload WAV directly to backend
+  uploadWavAudio(wavBlob);
+}
+
+function encode16BitWav(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+
+  function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  }
+
+  /* RIFF identifier */
+  writeString(view, 0, 'RIFF');
+  /* file length */
+  view.setUint32(4, 36 + samples.length * 2, true);
+  /* RIFF type */
+  writeString(view, 8, 'WAVE');
+  /* format chunk identifier */
+  writeString(view, 12, 'fmt ');
+  /* format chunk length */
+  view.setUint32(16, 16, true);
+  /* sample format (raw PCM) */
+  view.setUint16(20, 1, true);
+  /* channel count (mono) */
+  view.setUint16(22, 1, true);
+  /* sample rate */
+  view.setUint32(24, sampleRate, true);
+  /* byte rate (sample rate * block align) */
+  view.setUint32(28, sampleRate * 2, true);
+  /* block align (channel count * bytes per sample) */
+  view.setUint16(32, 2, true);
+  /* bits per sample */
+  view.setUint16(34, 16, true);
+  /* data chunk identifier */
+  writeString(view, 36, 'data');
+  /* data chunk length */
+  view.setUint32(40, samples.length * 2, true);
+
+  // Write 16-bit PCM samples
+  let index = 44;
+  for (let i = 0; i < samples.length; i++) {
+    let s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(index, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    index += 2;
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+async function uploadWavAudio(wavBlob) {
+  const indicator = document.getElementById('transcription-indicator');
+  indicator.innerText = 'Transcrevendo áudio WAV...';
+
+  const formData = new FormData();
+  formData.append('file', wavBlob, 'recording.wav');
+  formData.append('language', currentLang === 'en-US' ? 'en' : 'pt');
+
+  try {
+    const res = await fetch(`/api/audio/transcribe?language=${currentLang === 'en-US' ? 'en' : 'pt'}`, {
+      method: 'POST',
+      body: formData,
+    });
+
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    // DarkHub
-    const darkhubDot = document.getElementById('darkhub-dot');
-    const darkhubText = document.getElementById('darkhub-text');
-    if (data.darkhub_online) {
-      darkhubDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
-      darkhubText.innerText = 'DarkHub: Online';
+    if (data.text) {
+      indicator.innerText = `🎙️ [${data.engine_used}]: "${data.text.substring(0, 45)}..."`;
+      const input = document.getElementById('user-input');
+      input.value = (input.value ? input.value + ' ' : '') + data.text;
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 128) + 'px';
     } else {
-      darkhubDot.className = 'w-2 h-2 rounded-full bg-amber-400';
-      darkhubText.innerText = 'DarkHub: Standby';
+      indicator.innerText = `⚠️ ${data.fallback_reason || 'Nenhum áudio detectado'}`;
     }
-
-    // Ollama
-    const ollamaDot = document.getElementById('ollama-dot');
-    const ollamaText = document.getElementById('ollama-text');
-    if (data.ollama_online) {
-      ollamaDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
-      ollamaText.innerText = 'Ollama: Local ($0)';
-    } else {
-      ollamaDot.className = 'w-2 h-2 rounded-full bg-slate-500';
-      ollamaText.innerText = 'Ollama: Offline';
-    }
-
-    document.getElementById('mcp-count').innerText = data.tools_count || '0';
   } catch (err) {
-    document.getElementById('darkhub-dot').className = 'w-2 h-2 rounded-full bg-red-400';
-    document.getElementById('darkhub-text').innerText = 'DarkHub: Desconectado';
+    indicator.innerText = `⚠️ Falha na transcrição: ${err.message}`;
+  } finally {
+    setTimeout(() => { indicator.innerText = ''; }, 6000);
   }
 }
+
+// ==============================================================================
+// Chat & Messaging Logic
+// ==============================================================================
 
 async function sendMessage(overrideText) {
   const userInput = document.getElementById('user-input');
@@ -230,85 +479,59 @@ function quickPrompt(text) {
   sendMessage(text);
 }
 
-// ==============================================================================
-// Web Audio API & MediaRecorder
-// ==============================================================================
+function switchTab(tab) {
+  const tabDarkhub = document.getElementById('tab-darkhub');
+  const tabMcp = document.getElementById('tab-mcp');
+  const btnDarkhub = document.getElementById('tab-btn-darkhub');
+  const btnMcp = document.getElementById('tab-btn-mcp');
 
-async function toggleRecording() {
-  if (isRecording) {
-    stopRecording();
+  if (tab === 'darkhub') {
+    tabDarkhub.classList.remove('hidden');
+    tabMcp.classList.add('hidden');
+    btnDarkhub.className = 'flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700';
+    btnMcp.className = 'flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition';
   } else {
-    startRecording();
+    tabDarkhub.classList.add('hidden');
+    tabMcp.classList.remove('hidden');
+    btnMcp.className = 'flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700';
+    btnDarkhub.className = 'flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition';
   }
 }
 
-async function startRecording() {
+async function checkHealth() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioChunks = [];
-    mediaRecorder = new MediaRecorder(stream);
-
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) audioChunks.push(event.data);
-    };
-
-    mediaRecorder.onstop = uploadRecordedAudio;
-    mediaRecorder.start();
-    isRecording = true;
-
-    document.getElementById('recording-banner').classList.remove('hidden');
-    document.getElementById('btn-mic').classList.add('bg-red-600', 'text-white', 'recording-pulse');
-  } catch (err) {
-    alert(`Erro ao acessar microfone: ${err.message}`);
-  }
-}
-
-function stopRecording() {
-  if (mediaRecorder && isRecording) {
-    mediaRecorder.stop();
-    mediaRecorder.stream.getTracks().forEach(track => track.stop());
-    isRecording = false;
-
-    document.getElementById('recording-banner').classList.add('hidden');
-    document.getElementById('btn-mic').classList.remove('bg-red-600', 'text-white', 'recording-pulse');
-  }
-}
-
-async function uploadRecordedAudio() {
-  const indicator = document.getElementById('transcription-indicator');
-  indicator.innerText = 'Transcrevendo áudio...';
-
-  const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-  const formData = new FormData();
-  formData.append('file', audioBlob, 'mic_recording.webm');
-
-  try {
-    const res = await fetch('/api/audio/transcribe', {
-      method: 'POST',
-      body: formData,
-    });
-
+    const res = await fetch('/api/health');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    if (data.text) {
-      indicator.innerText = `🎙️ [${data.engine_used}]: "${data.text.substring(0, 40)}..."`;
-      // Put in input and send
-      document.getElementById('user-input').value = data.text;
-      sendMessage();
+    // DarkHub
+    const darkhubDot = document.getElementById('darkhub-dot');
+    const darkhubText = document.getElementById('darkhub-text');
+    if (data.darkhub_online) {
+      darkhubDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
+      darkhubText.innerText = 'DarkHub: Online';
     } else {
-      indicator.innerText = `⚠️ Nenhum texto reconhecido (${data.fallback_reason || 'baixa confiança'}).`;
+      darkhubDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+      darkhubText.innerText = 'DarkHub: Standby';
     }
+
+    // Ollama
+    const ollamaDot = document.getElementById('ollama-dot');
+    const ollamaText = document.getElementById('ollama-text');
+    if (data.ollama_online) {
+      ollamaDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
+      ollamaText.innerText = 'Ollama: Local ($0)';
+    } else {
+      ollamaDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+      ollamaText.innerText = 'Ollama: Offline';
+    }
+
+    document.getElementById('mcp-count').innerText = data.tools_count || '0';
   } catch (err) {
-    indicator.innerText = `⚠️ Falha na transcrição: ${err.message}`;
-  } finally {
-    setTimeout(() => { indicator.innerText = ''; }, 6000);
+    document.getElementById('darkhub-dot').className = 'w-2 h-2 rounded-full bg-red-400';
+    document.getElementById('darkhub-text').innerText = 'DarkHub: Desconectado';
   }
 }
-
-// ==============================================================================
-// DarkHub Demands Management
-// ==============================================================================
 
 async function refreshDemands() {
   const container = document.getElementById('demands-list');

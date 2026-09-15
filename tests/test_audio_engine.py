@@ -117,3 +117,37 @@ def test_fallback_triggered_when_local_whisper_fails(tmp_path: Path):
     assert result.fallback_triggered
     assert result.engine_used == "cloud_groq_whisper"
     assert "Recuperado" in result.text
+
+
+def test_bilingual_groq_fallback_pt_and_en(tmp_path: Path):
+    dummy_wav = tmp_path / "bilingual.wav"
+    dummy_wav.write_bytes(b"RIFFdummywavecontent")
+
+    captured_requests = []
+
+    def mock_handler(request: httpx.Request):
+        captured_requests.append(request)
+        # Check if english or portuguese
+        return httpx.Response(200, json={"text": "Voice transcribed successfully"})
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(mock_handler))
+    cfg = JarvisConfig(groq_api_key="gsk_test_mock_123")
+    engine = AudioTranscriptionEngine(
+        config=cfg,
+        local_model_instance=MockWhisperModelPoorQuality(),
+        http_client=mock_client,
+    )
+
+    # Test English
+    res_en = engine.transcribe(dummy_wav, language="en")
+    assert res_en.fallback_triggered
+    assert res_en.language == "en"
+    assert res_en.engine_used == "cloud_groq_whisper"
+    assert res_en.text == "Voice transcribed successfully"
+
+    # Test Portuguese
+    res_pt = engine.transcribe(dummy_wav, language="pt")
+    assert res_pt.fallback_triggered
+    assert res_pt.language == "pt"
+    assert res_pt.engine_used == "cloud_groq_whisper"
+    assert len(captured_requests) == 2

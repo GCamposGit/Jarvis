@@ -86,3 +86,33 @@ def test_static_index_serving():
             assert "Assistente Pessoal" in resp.text
 
     asyncio.run(_run())
+
+
+def test_audio_transcribe_endpoint():
+    async def _run():
+        from unittest.mock import MagicMock
+        from jarvis.core.audio import TranscriptionResult
+
+        cfg = JarvisConfig()
+        app = create_app(cfg)
+
+        mock_result = TranscriptionResult(
+            text="Hello world test",
+            language="en",
+            engine_used="cloud_groq_whisper",
+            fallback_triggered=True,
+            confidence_score=0.99,
+        )
+        app.state.audio_engine.transcribe = MagicMock(return_value=mock_result)
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+            files = {"file": ("test.wav", b"RIFF1234WAVEfmt ", "audio/wav")}
+            resp = await ac.post("/api/audio/transcribe?language=en", files=files)
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["text"] == "Hello world test"
+            assert data["language"] == "en"
+            assert data["engine_used"] == "cloud_groq_whisper"
+
+    asyncio.run(_run())
+

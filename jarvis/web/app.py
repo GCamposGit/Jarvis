@@ -121,14 +121,17 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
         )
 
     @app.post("/api/audio/transcribe", response_model=TranscriptionResult)
-    async def transcribe_audio(file: UploadFile = File(...)) -> TranscriptionResult:
+    async def transcribe_audio(
+        file: UploadFile = File(...),
+        language: Optional[str] = None,
+    ) -> TranscriptionResult:
         tmp_id = uuid.uuid4().hex[:8]
         ext = Path(file.filename or "audio.wav").suffix or ".wav"
         save_path = cfg.audio_upload_dir / f"upload_{tmp_id}{ext}"
         try:
             with open(save_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
-            return audio_engine.transcribe(save_path)
+            return audio_engine.transcribe(save_path, language=language)
         finally:
             save_path.unlink(missing_ok=True)
 
