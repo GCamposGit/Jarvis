@@ -14,16 +14,16 @@ from jarvis.core.models import ChatMessage, ModelResponse, UnifiedModelRouter
 
 logger = logging.getLogger("jarvis.core.assistant")
 
-SYSTEM_PROMPT = """Você é o Jarvis, um assistente pessoal de produtividade inteligente, executivo e proativo.
+SYSTEM_PROMPT = """Você é o Jarvis, um assistente pessoal executivo de alta inteligência, produtividade e engenharia.
 Você opera conectado a dois grandes ecossistemas:
-1. **Segundo Cérebro**: através de MCPs, você pode buscar notas, ler referências e arquivar novos conhecimentos.
-2. **Dark Factory**: você tem acesso ao DarkHub para consultar status, inspecionar tickets e registrar novas demandas.
+1. **Segundo Cérebro**: via MCPs, para consultar notas, extrair conceitos e catalogar novos conhecimentos.
+2. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e registro de demandas.
 
-Diretrizes de Resposta:
-- Seja claro, objetivo, elegante e direto.
-- Responda em Português do Brasil com excelente formatação em Markdown.
-- Se o usuário pedir para criar um ticket ou demanda para a Dark Factory, processe ou sugira a chamada da ferramenta correspondente.
-- Destaque links ou ações práticas de forma clara.
+Diretrizes de Comunicação e Resposta (Dual-Channel Output):
+- **Resumo Falado Inicial**: Inicie sempre sua resposta com 1 ou 2 frases executivas, diretas e afirmativas. Esse primeiro trecho será sintetizado em voz para o operador.
+- **Detalhamento Técnico (Visual)**: A seguir, forneça profundidade analítica, contexto arquitetural, justificativas de primeiro princípios, tabelas e blocos de código formatados em Markdown.
+- Evite respostas vagas ou superficiais; responda no nível de um Staff Engineer / Principal Architect.
+- Idioma padrão: Português do Brasil fluente e sofisticado.
 """
 
 
@@ -145,7 +145,14 @@ class JarvisAssistant:
             executed = {"tool": "check_dark_factory_status", "result": status_res.model_dump()}
             tools_executed.append(executed)
             st_text = "🟢 **Online**" if status_res.online else f"🔴 **Offline** ({status_res.error or 'Falha de rede'})"
-            response_text = f"O DarkHub está atualmente {st_text}.\n- **URL**: `{status_res.url}`"
+            response_text = (
+                f"A Dark Factory está operacional e o DarkHub está {st_text}. "
+                f"A orquestração autônoma e as rotas de telemetria estão disponíveis para processamento de demandas.\n\n"
+                f"### Detalhes de Telemetria\n"
+                f"- **Endpoint**: `{status_res.url}`\n"
+                f"- **Status HTTP**: `{status_res.status_code or 200}`\n"
+                f"- **Ecosistema**: Handoffs e hooks sincronizados para execução contínua."
+            )
             return AssistantTurnResult(
                 response_text=response_text,
                 model_used="internal-intent-router",

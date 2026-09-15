@@ -6,6 +6,10 @@ let chatHistory = [];
 let currentLang = 'pt-BR'; // 'pt-BR' or 'en-US'
 let isRecording = false;
 
+// TTS (Text-to-Speech) State
+let ttsEnabled = true;
+let isSpeaking = false;
+
 // Web Speech API instances
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
@@ -23,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initUI();
   initLanguageSelector();
   initSpeechRecognition();
+  initTTS();
   checkHealth();
   refreshDemands();
   loadMCPTools();
@@ -34,6 +39,7 @@ function initUI() {
   const btnSend = document.getElementById('btn-send');
   const btnMic = document.getElementById('btn-mic');
   const btnStopRecording = document.getElementById('btn-stop-recording');
+  const btnTts = document.getElementById('tts-toggle-btn');
 
   // Auto-grow textarea
   userInput.addEventListener('input', () => {
@@ -52,6 +58,9 @@ function initUI() {
   btnSend.addEventListener('click', () => sendMessage());
   btnMic.addEventListener('click', toggleVoiceDictation);
   btnStopRecording.addEventListener('click', stopVoiceDictation);
+  if (btnTts) {
+    btnTts.addEventListener('click', toggleTTS);
+  }
 
   // Tabs
   document.getElementById('tab-btn-darkhub').addEventListener('click', () => switchTab('darkhub'));
@@ -401,6 +410,9 @@ async function sendMessage(overrideText) {
     chatHistory.push({ role: 'user', content: text });
     chatHistory.push({ role: 'assistant', content: data.response_text });
 
+    // Speak concise executive summary in Portuguese (Dual-Channel Output)
+    speakResponse(data.response_text);
+
   } catch (err) {
     removeLoadingBubble(loadingId);
     appendMessage('assistant', `⚠️ Falha de comunicação com o servidor: ${err.message}`);
@@ -618,6 +630,163 @@ async function handleDemandSubmit(e) {
     }
   } catch (err) {
     alert(`Erro de rede ao enviar demanda: ${err.message}`);
+  }
+}
+
+// ==============================================================================
+// Text-to-Speech (TTS) Neural Voice Synthesis Engine (Dual-Channel Output)
+// ==============================================================================
+
+function initTTS() {
+  updateTTSButtonUI();
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      // Warm up and cache voices
+      window.speechSynthesis.getVoices();
+    };
+  }
+}
+
+function toggleTTS() {
+  if (isSpeaking) {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    isSpeaking = false;
+    updateTTSButtonUI();
+    return;
+  }
+  ttsEnabled = !ttsEnabled;
+  updateTTSButtonUI();
+}
+
+function updateTTSButtonUI() {
+  const btn = document.getElementById('tts-toggle-btn');
+  const icon = document.getElementById('tts-icon');
+  const label = document.getElementById('tts-label');
+  if (!btn) return;
+
+  if (isSpeaking) {
+    btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-600 border border-teal-400 text-white text-xs font-mono recording-pulse transition cursor-pointer shadow-md shadow-teal-500/20';
+    icon.innerText = '🔊';
+    label.innerText = 'Falando...';
+  } else if (ttsEnabled) {
+    btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/70 border border-emerald-800/80 text-emerald-400 text-xs font-mono hover:bg-emerald-900/60 transition cursor-pointer';
+    icon.innerText = '🔊';
+    label.innerText = 'Voz: Ativa';
+  } else {
+    btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 text-xs font-mono hover:text-white transition cursor-pointer';
+    icon.innerText = '🔇';
+    label.innerText = 'Voz: Mudo';
+  }
+}
+
+/**
+ * Extracts a concise executive summary from markdown to avoid audio fatigue and long recitations.
+ * Strips code blocks, links, tables, and headers, selecting only the first 1-2 key sentences.
+ */
+function extractSpokenSummary(markdownText) {
+  if (!markdownText) return '';
+
+  // 1. Remove code blocks
+  let text = markdownText.replace(/```[\s\S]*?```/g, ' [código omitido no áudio] ');
+  // 2. Remove inline code
+  text = text.replace(/`([^`]+)`/g, '$1');
+  // 3. Remove images
+  text = text.replace(/!\[.*?\]\(.*?\)/g, '');
+  // 4. Remove links: [text](url) -> text
+  text = text.replace(/\[(.*?)\]\(.*?\)/g, '$1');
+  // 5. Remove markdown headers
+  text = text.replace(/^#+\s+/gm, '');
+  // 6. Remove bold/italics
+  text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  text = text.replace(/(\*|_)(.*?)\1/g, '$2');
+  // 7. Remove blockquotes, table separators and list bullets
+  text = text.replace(/^>\s+/gm, '');
+  text = text.replace(/^\|.*?\|$/gm, '');
+  text = text.replace(/^[\*\-\+]\s+/gm, '');
+  text = text.replace(/^\d+\.\s+/gm, '');
+  // 8. Remove HTML tags
+  text = text.replace(/<[^>]*>/g, '');
+  // 9. Clean excessive whitespaces and newlines
+  text = text.replace(/\s+/g, ' ').trim();
+
+  if (!text) return '';
+
+  // 10. Split into sentences to take only the first 1 or 2 concise sentences
+  const sentenceRegex = /[^.!?]+[.!?]+/g;
+  const matches = text.match(sentenceRegex);
+
+  let summary = '';
+  if (matches && matches.length > 0) {
+    summary = matches[0].trim();
+    if (matches.length > 1 && (summary.length + matches[1].trim().length) <= 220) {
+      summary += ' ' + matches[1].trim();
+    }
+    // If there is extensive follow-up text, append natural closure if not already present
+    if (matches.length > 2 && !summary.toLowerCase().includes('tela') && !summary.toLowerCase().includes('detalhes')) {
+      summary += ' Os detalhes completos estão na tela.';
+    }
+  } else {
+    // Truncate at ~160 chars on word boundary if no punctuation
+    if (text.length > 160) {
+      summary = text.substring(0, 160).replace(/\s\S*$/, '') + '... Os detalhes completos estão na tela.';
+    } else {
+      summary = text;
+    }
+  }
+
+  return summary;
+}
+
+function speakResponse(markdownText) {
+  if (!ttsEnabled || !('speechSynthesis' in window)) return;
+
+  const spokenText = extractSpokenSummary(markdownText);
+  if (!spokenText) return;
+
+  try {
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(spokenText);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 1.05;
+    utterance.pitch = 1.0;
+
+    // Pick best natural Portuguese voice
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      const ptVoices = voices.filter(v => v.lang && (v.lang === 'pt-BR' || v.lang === 'pt_BR' || v.lang.startsWith('pt')));
+      const preferred = ptVoices.find(v => v.name.includes('Francisca') || v.name.includes('Natural')) ||
+                        ptVoices.find(v => v.name.includes('Antonio')) ||
+                        ptVoices.find(v => v.name.includes('Google')) ||
+                        ptVoices[0];
+      if (preferred) {
+        utterance.voice = preferred;
+      }
+    }
+
+    utterance.onstart = () => {
+      isSpeaking = true;
+      updateTTSButtonUI();
+    };
+
+    utterance.onend = () => {
+      isSpeaking = false;
+      updateTTSButtonUI();
+    };
+
+    utterance.onerror = (e) => {
+      console.warn('SpeechSynthesis event error:', e);
+      isSpeaking = false;
+      updateTTSButtonUI();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.warn('SpeechSynthesis playback failed:', err);
+    isSpeaking = false;
+    updateTTSButtonUI();
   }
 }
 
