@@ -119,6 +119,7 @@ class DarkFactoryClient:
         except Exception:
             pass
 
+        journey = [core_journey] if isinstance(core_journey, str) and core_journey else (core_journey or ["Submitted through Jarvis Assistant"])
         ticket_payload = {
             "id": next_id,
             "project_id": project_id,
@@ -129,7 +130,7 @@ class DarkFactoryClient:
             "lifecycle_stage": "execution",
             "horizon": "now",
             "problem_statement": problem_statement or title,
-            "core_journey": core_journey or "Submitted through Jarvis Assistant",
+            "core_journey": journey,
             "acceptance_criteria": acceptance_criteria or ["Harness passes with deterministic verification"],
             "non_goals": non_goals or [],
         }
