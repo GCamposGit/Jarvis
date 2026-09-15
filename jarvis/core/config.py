@@ -60,11 +60,14 @@ class JarvisConfig(BaseModel):
     groq_api_key: Optional[str] = Field(
         default_factory=lambda: _recover_env_or_registry("GROQ_API_KEY")
     )
+    gemini_api_key: Optional[str] = Field(
+        default_factory=lambda: _recover_env_or_registry("GEMINI_API_KEY")
+    )
 
     # Model defaults
     default_provider: str = Field(default_factory=lambda: os.environ.get("JARVIS_DEFAULT_PROVIDER", "ollama"))
-    default_local_model: str = Field(default_factory=lambda: os.environ.get("JARVIS_DEFAULT_LOCAL_MODEL", "qwen2.5-coder:latest"))
-    default_cloud_model: str = Field(default_factory=lambda: os.environ.get("JARVIS_DEFAULT_CLOUD_MODEL", "google/gemini-2.5-flash"))
+    default_local_model: str = Field(default_factory=lambda: os.environ.get("JARVIS_DEFAULT_LOCAL_MODEL", "qwen-code-deep:latest"))
+    default_cloud_model: str = Field(default_factory=lambda: os.environ.get("JARVIS_DEFAULT_CLOUD_MODEL", "gemini-2.5-flash"))
 
     # Audio Engine settings
     whisper_model_size: str = Field(default_factory=lambda: os.environ.get("JARVIS_WHISPER_MODEL", "base"))

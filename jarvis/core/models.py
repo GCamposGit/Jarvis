@@ -82,6 +82,8 @@ class UnifiedModelRouter:
         # Auto-detect provider if model contains "/" (OpenRouter convention)
         if "/" in chosen_model:
             chosen_provider = "openrouter"
+        elif "gemini" in chosen_model.lower() and chosen_provider in ("google", "gemini"):
+            chosen_provider = "google"
 
         if chosen_provider == "ollama":
             try:
@@ -98,6 +100,29 @@ class UnifiedModelRouter:
                     return await self._call_openrouter(
                         messages,
                         model=self.config.default_cloud_model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        start_time=start,
+                        tools=tools,
+                    )
+                raise
+
+        if chosen_provider == "google":
+            try:
+                return await self._call_google(
+                    messages,
+                    model=chosen_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    start_time=start,
+                )
+            except Exception as exc:
+                logger.warning("Google Gemini call failed (%s); attempting OpenRouter fallback.", exc)
+                if self.config.openrouter_api_key:
+                    fallback_model = f"google/{chosen_model}" if "/" not in chosen_model else chosen_model
+                    return await self._call_openrouter(
+                        messages,
+                        model=fallback_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
                         start_time=start,
@@ -219,3 +244,73 @@ class UnifiedModelRouter:
             cost_usd=0.0,
             tool_calls=tool_calls,
         )
+
+    async def _call_google(
+        self,
+        messages: List[ChatMessage],
+        *,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        start_time: float,
+    ) -> ModelResponse:
+        """Call Google Generative Language REST API via GEMINI_API_KEY ($0 marginal free tier)."""
+        key = self.config.gemini_api_key
+        if not key:
+            raise RuntimeError("GEMINI_API_KEY não configurada no ambiente ou .env.")
+
+        normalized_model = model.replace("google/", "")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{normalized_model}:generateContent?key={key}"
+
+        system_parts = []
+        contents = []
+        for m in messages:
+            if m.role == "system":
+                system_parts.append({"text": m.content})
+            elif m.role == "user":
+                contents.append({"role": "user", "parts": [{"text": m.content}]})
+            elif m.role in ("assistant", "model"):
+                contents.append({"role": "model", "parts": [{"text": m.content}]})
+
+        payload: Dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+        if system_parts:
+            payload["systemInstruction"] = {"parts": system_parts}
+
+        resp = await self._client.post(
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30.0,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"Google Gemini API error {resp.status_code}: {resp.text}")
+
+        data = resp.json()
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+        candidates = data.get("candidates", [])
+        text = ""
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts:
+                text = parts[0].get("text", "")
+
+        usage = data.get("usageMetadata", {})
+        prompt_tokens = usage.get("promptTokenCount", 0)
+        completion_tokens = usage.get("candidatesTokenCount", 0)
+
+        return ModelResponse(
+            text=text,
+            model=normalized_model,
+            provider="google",
+            tokens_prompt=prompt_tokens,
+            tokens_completion=completion_tokens,
+            latency_ms=latency_ms,
+            cost_usd=0.0,
+        )
+

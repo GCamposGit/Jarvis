@@ -90,3 +90,41 @@ def test_list_local_models():
         assert "qwen2.5-coder:latest" in models
 
     asyncio.run(_run())
+
+
+def test_google_gemini_generation_success():
+    async def _run():
+        def mock_handler(request: httpx.Request):
+            if "generativelanguage.googleapis.com" in request.url.host:
+                return httpx.Response(
+                    200,
+                    json={
+                        "candidates": [
+                            {
+                                "content": {
+                                    "parts": [{"text": "Resposta direta do Gemini Flash $0 marginal."}],
+                                    "role": "model",
+                                }
+                            }
+                        ],
+                        "usageMetadata": {"promptTokenCount": 30, "candidatesTokenCount": 15},
+                    },
+                )
+            return httpx.Response(404)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        cfg = JarvisConfig(gemini_api_key="AIzaSyMockKeyForTesting123456")
+        router = UnifiedModelRouter(config=cfg, http_client=client)
+
+        resp = await router.generate(
+            [ChatMessage(role="user", content="Explique o conceito")],
+            model="gemini-2.5-flash",
+            provider="google",
+        )
+        assert resp.provider == "google"
+        assert resp.model == "gemini-2.5-flash"
+        assert "Gemini Flash" in resp.text
+        assert resp.cost_usd == 0.0
+
+    asyncio.run(_run())
+
