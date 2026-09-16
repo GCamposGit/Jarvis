@@ -10,8 +10,25 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 def _recover_env_or_registry(key: str) -> Optional[str]:
-    """Recover environment variable from process env or Windows user registry."""
+    """Recover environment variable from process env, .env file or Windows user registry."""
     val = os.environ.get(key)
+    if not val:
+        candidates = [Path.cwd() / ".env", Path(__file__).resolve().parents[2] / ".env"]
+        for env_file in candidates:
+            if env_file.is_file():
+                try:
+                    for line in env_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            if k.strip() == key:
+                                val = v.strip().strip("'\"")
+                                break
+                except Exception:
+                    pass
+            if val:
+                break
+
     if not val and sys.platform == "win32":
         try:
             import winreg

@@ -57,12 +57,12 @@ def test_openrouter_generation_success():
 
         resp = await router.generate(
             [ChatMessage(role="user", content="Escreva um plano")],
-            model="anthropic/claude-3.7-sonnet",
+            model="anthropic/claude-sonnet-4.6",
             provider="openrouter",
         )
         assert resp.provider == "openrouter"
-        assert resp.model == "anthropic/claude-3.7-sonnet"
-        assert "Claude 3.7" in resp.text
+        assert resp.model == "anthropic/claude-sonnet-4.6"
+        assert "Claude" in resp.text
 
     asyncio.run(_run())
 

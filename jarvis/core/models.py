@@ -79,11 +79,12 @@ class UnifiedModelRouter:
             self.config.default_local_model if chosen_provider == "ollama" else self.config.default_cloud_model
         )
 
-        # Auto-detect provider if model contains "/" (OpenRouter convention)
-        if "/" in chosen_model:
-            chosen_provider = "openrouter"
-        elif "gemini" in chosen_model.lower() and chosen_provider in ("google", "gemini"):
-            chosen_provider = "google"
+        # Auto-detect provider only if not explicitly passed
+        if not provider:
+            if "/" in chosen_model:
+                chosen_provider = "openrouter"
+            elif "gemini" in chosen_model.lower():
+                chosen_provider = "google"
 
         if chosen_provider == "ollama":
             try:
@@ -97,15 +98,21 @@ class UnifiedModelRouter:
             except Exception as exc:
                 logger.warning("Ollama call failed (%s); attempting OpenRouter fallback.", exc)
                 if self.config.openrouter_api_key:
+                    fallback_model = self.config.default_cloud_model
+                    if "/" not in fallback_model:
+                        fallback_model = f"google/{fallback_model}"
                     return await self._call_openrouter(
                         messages,
-                        model=self.config.default_cloud_model,
+                        model=fallback_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
                         start_time=start,
                         tools=tools,
                     )
-                raise
+                raise RuntimeError(
+                    f"Ollama local está offline ou inacessível em {self.config.ollama_url}. "
+                    f"Inicie o Ollama no Windows executando 'ollama serve' ou escolha um modelo de nuvem no seletor."
+                ) from exc
 
         if chosen_provider == "google":
             try:
