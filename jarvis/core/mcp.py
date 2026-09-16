@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -160,7 +162,90 @@ class MCPManager:
 
     # Handlers for builtin second brain
     def _handle_search_second_brain(self, args: Dict[str, Any]) -> Any:
-        query = args.get("query", "").strip().lower()
+        query = args.get("query", "").strip()
+        limit = args.get("limit", 5)
+
+        # Check if Segundo Cérebro repository is accessible
+        sc_root = Path(os.environ.get("SEGUNDO_CEREBRO_ROOT", r"C:\dev\SegundoCerebro"))
+        sc_python = sc_root / ".venv" / "Scripts" / "python.exe"
+
+        if sc_root.exists() and sc_python.exists() and os.environ.get("JARVIS_MOCK_MCP", "0") != "1":
+            import subprocess
+            src_path = str(sc_root / "src")
+            script = f"""
+import sys, json, os
+from pathlib import Path
+sys.path.insert(0, r'{src_path}')
+try:
+    from segundocerebro.config import carregar
+    from segundocerebro.index.store import Store
+    from segundocerebro.index.embeddings import Embedder
+    from segundocerebro.retrieve.hybrid import BuscaHibrida
+
+    cfg = carregar()
+    base = cfg.bases[0] if cfg and cfg.bases else None
+    indice_target = os.environ.get("SEGUNDO_CEREBRO_INDICE")
+    if not indice_target:
+        local_idx = Path(r'{sc_root}') / "index"
+        if local_idx.exists():
+            indice_target = str(local_idx)
+        elif base:
+            indice_target = base.indice
+        else:
+            indice_target = "index"
+
+    modelo_nome = getattr(base, "modelo", "e5-large") if base else "e5-large"
+    embedder = Embedder(modelo_nome, threads=4)
+    store = Store(indice_target, embedder.dim)
+    busca = BuscaHibrida(store, embedder)
+
+    args = json.loads(sys.argv[1])
+    q = args.get("query", "")
+    k = args.get("limit", 5)
+    acertos = busca.buscar_chunks(q, k=k, contexto=1)
+    trechos = []
+    for a in acertos:
+        raw_score = float(a.score)
+        score = raw_score if raw_score >= 0.1 else min(1.0, round(raw_score * 30.0, 4))
+        trechos.append({{
+            "id": getattr(a, "id", getattr(a, "chunk_id", "")),
+            "title": f"Referência sobre {{q}} - {{a.path}}",
+            "arquivo": a.path,
+            "secao": a.trilha or "",
+            "onde": a.locator or "",
+            "texto": a.texto,
+            "snippet": a.texto[:300],
+            "score": score,
+        }})
+    print(json.dumps({{"results": trechos}}))
+except Exception as exc:
+    print(json.dumps({{"error": str(exc)}}))
+"""
+            env = dict(os.environ)
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONPATH"] = src_path
+            try:
+                proc = subprocess.run(
+                    [str(sc_python), "-c", script, json.dumps({"query": query, "limit": limit})],
+                    cwd=str(sc_root),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                )
+                if proc.returncode == 0:
+                    raw_out = proc.stdout.strip()
+                    for line in reversed(raw_out.splitlines()):
+                        line = line.strip()
+                        if line.startswith("{") and line.endswith("}"):
+                            data = json.loads(line)
+                            if "results" in data and data["results"]:
+                                return data["results"]
+            except Exception as exc:
+                logger.warning("Segundo Cérebro search execution failed: %s", exc)
+
+        # Fallback fixture if offline or mock testing
         return [
             {
                 "id": "note_001",

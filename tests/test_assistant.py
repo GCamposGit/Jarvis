@@ -51,3 +51,54 @@ def test_assistant_regular_chat():
         assert "Olá, eu sou o Jarvis" in res.response_text
 
     asyncio.run(_run())
+
+
+def test_assistant_tool_calling_and_second_turn():
+    async def _run():
+        call_count = 0
+
+        def mock_model_handler(request: httpx.Request):
+            nonlocal call_count
+            if request.url.path == "/api/chat":
+                call_count += 1
+                if call_count == 1:
+                    return httpx.Response(
+                        200,
+                        json={
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "function": {
+                                            "name": "search_second_brain",
+                                            "arguments": '{"query": "política de IA"}',
+                                        }
+                                    }
+                                ],
+                            },
+                        },
+                    )
+                elif call_count == 2:
+                    return httpx.Response(
+                        200,
+                        json={
+                            "message": {
+                                "role": "assistant",
+                                "content": "O código oficial da Política de IA é PO-CORP-007.",
+                            },
+                        },
+                    )
+            return httpx.Response(404)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_model_handler))
+        models = UnifiedModelRouter(http_client=client)
+        assistant = JarvisAssistant(model_router=models)
+
+        res = await assistant.chat("Qual o número da política de IA aprovada?")
+        assert call_count == 2
+        assert len(res.tools_executed) == 1
+        assert res.tools_executed[0]["tool"] == "search_second_brain"
+        assert "PO-CORP-007" in res.response_text
+
+    asyncio.run(_run())

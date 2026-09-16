@@ -192,9 +192,38 @@ class JarvisAssistant:
                             "is_error": t_res.is_error,
                         })
 
-                # Append execution summary to response if text was empty
-                if not response_text and tools_executed:
-                    response_text = f"Ação executada com sucesso: `{tools_executed[0].get('tool')}`."
+                if tools_executed:
+                    tool_context_blocks = []
+                    for t in tools_executed:
+                        tool_context_blocks.append(
+                            f"=== Resultado da ferramenta '{t['tool']}' ===\n"
+                            f"{json.dumps(t['output'], ensure_ascii=False, indent=2)}"
+                        )
+                    messages.append(ChatMessage(
+                        role="assistant",
+                        content=resp.text or "Consultando o acervo do Segundo Cérebro...",
+                    ))
+                    messages.append(ChatMessage(
+                        role="user",
+                        content=(
+                            f"[Evidências e trechos reais retornados pelas ferramentas]:\n"
+                            f"{chr(10).join(tool_context_blocks)}\n\n"
+                            f"Com base exclusiva nos dados acima, responda à pergunta do usuário com precisão, "
+                            f"citando as fontes, nomes de arquivos e seções encontradas."
+                        ),
+                    ))
+                    try:
+                        final_resp = await self.models.generate(
+                            messages=messages,
+                            model=model,
+                            provider=provider,
+                            tools=None,
+                        )
+                        response_text = final_resp.text
+                    except Exception as exc:
+                        logger.warning("Second-turn synthesis failed: %s", exc)
+                        if not response_text:
+                            response_text = f"Ação executada com sucesso: `{tools_executed[0].get('tool')}`."
 
             return AssistantTurnResult(
                 response_text=response_text,
