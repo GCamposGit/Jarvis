@@ -1,0 +1,44 @@
+{
+  "project_name": "Jarvis",
+  "version": "0.1.0",
+  "timestamp": "2026-09-18T18:34:30Z",
+  "stack": {
+    "language": "python",
+    "python_version": ">=3.12",
+    "framework": "fastapi",
+    "data_validation": "pydantic-v2",
+    "http_client": "httpx",
+    "audio": "faster-whisper (local CUDA/CPU) + Groq Whisper API (cloud fallback)",
+    "test_runner": "pytest"
+  },
+  "reachability": {
+    "driver": "library, cli, http",
+    "entrypoints": {
+      "library": "jarvis.core.assistant.JarvisAssistant",
+      "cli": "run_jarvis.py",
+      "web_gateway": "jarvis.web.app:create_app"
+    },
+    "test_command": "python .factory/darkfac.py harness --quick"
+  },
+  "governance_detected": {
+    "mission_present": true,
+    "factory_rules_present": true,
+    "agents_md_present": true,
+    "autonomy_level": 2,
+    "gate_command": "python .factory/darkfac.py harness --quick"
+  },
+  "active_capabilities": [
+    "multi_model_routing_ollama_openrouter",
+    "hybrid_audio_transcription_whisper_groq",
+    "mcp_second_brain_integration",
+    "dark_factory_backlog_integration",
+    "fastapi_web_dashboard"
+  ],
+  "evolution_targets": [
+    "autonomous_business_operations_engine",
+    "deterministic_ai_harness_with_sandboxed_execution",
+    "continuous_proactive_executive_workflows",
+    "multi_agent_adversarial_supervision",
+    "zero_cost_local_first_pareto_routing"
+  ]
+}

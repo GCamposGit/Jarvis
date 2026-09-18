@@ -1,0 +1,179 @@
+{
+  "ledger_id": "20260918_183506_ai-harnesses-for-autonomous-productivity-and-business-operat",
+  "query": "AI harnesses for autonomous productivity and business operations",
+  "topic_type": "topic_concept",
+  "created_at": "2026-09-18T18:35:06.020502+00:00",
+  "summary_executive": "Pesquisa conceitual estruturada sobre 'AI harnesses for autonomous productivity and business operations'. Catalogadas 5 publicações acadêmicas de alta relevância com DOI/arXiv IDs.",
+  "sources": [
+    {
+      "id": "arxiv:2603.28944v2",
+      "title": "Faith in AI can narrow the futures individuals consider",
+      "url": "http://arxiv.org/abs/2603.28944v2",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Aoi Naito",
+        "Hirokazu Shirado"
+      ],
+      "published_date": "2026-03-30T19:36:10Z",
+      "summary": "Artificial intelligence (AI) predictions are increasingly used to inform human decisions. Here, using a behavioral implementation of the classic Newcomb's paradox in 1,305 participants, we show that AI predictions can also shape the reasoning people use to make a decision. In this paradigm, perceived predictive authority can alter how people reason about their future actions, leading them to forgo a guaranteed reward. Over 40% of participants treated AI as such a predictive authority about their own behavior, significantly increasing the odds of forgoing the guaranteed reward by a factor of 3.39 (95% CI: 2.45-4.70) and reducing earnings by 10.7-42.9%. The effect appeared across AI presentations and decision contexts and remained detectable even when predictions repeatedly failed. When people perceive AI as capable of predicting their personal behavior, the mere presence of AI predictions may shape their decision-making, narrowing the futures they consider.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2603.28944v2"
+      }
+    },
+    {
+      "id": "arxiv:2501.02842v1",
+      "title": "Foundations of GenIR",
+      "url": "http://arxiv.org/abs/2501.02842v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Qingyao Ai",
+        "Jingtao Zhan",
+        "Yiqun Liu"
+      ],
+      "published_date": "2025-01-06T08:38:29Z",
+      "summary": "The chapter discusses the foundational impact of modern generative AI models on information access (IA) systems. In contrast to traditional AI, the large-scale training and superior data modeling of generative AI models enable them to produce high-quality, human-like responses, which brings brand new opportunities for the development of IA paradigms. In this chapter, we identify and introduce two of them in details, i.e., information generation and information synthesis. Information generation allows AI to create tailored content addressing user needs directly, enhancing user experience with immediate, relevant outputs. Information synthesis leverages the ability of generative AI to integrate and reorganize existing information, providing grounded responses and mitigating issues like model hallucination, which is particularly valuable in scenarios requiring precision and external knowledge. This chapter delves into the foundational aspects of generative models, including architecture, scaling, and training, and discusses their applications in multi-modal scenarios. Additionally, it examines the retrieval-augmented generation paradigm and other methods for corpus modeling and understanding, demonstrating how generative AI can enhance information access systems. It also summarizes potential challenges and fruitful directions for future studies.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2501.02842v1"
+      }
+    },
+    {
+      "id": "arxiv:2601.16513v1",
+      "title": "Competing Visions of Ethical AI: A Case Study of OpenAI",
+      "url": "http://arxiv.org/abs/2601.16513v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Melissa Wilfley",
+        "Mengting Ai",
+        "Madelyn Rose Sanfilippo"
+      ],
+      "published_date": "2026-01-23T07:26:45Z",
+      "summary": "Introduction. AI Ethics is framed distinctly across actors and stakeholder groups. We report results from a case study of OpenAI analysing ethical AI discourse. Method. Research addressed: How has OpenAI's public discourse leveraged 'ethics', 'safety', 'alignment' and adjacent related concepts over time, and what does discourse signal about framing in practice? A structured corpus, differentiating between communication for a general audience and communication with an academic audience, was assembled from public documentation. Analysis. Qualitative content analysis of ethical themes combined inductively derived and deductively applied codes. Quantitative analysis leveraged computational content analysis methods via NLP to model topics and quantify changes in rhetoric over time. Visualizations report aggregate results. For reproducible results, we have released our code at https://github.com/famous-blue-raincoat/AI_Ethics_Discourse. Results. Results indicate that safety and risk discourse dominate OpenAI's public communication and documentation, without applying academic and advocacy ethics frameworks or vocabularies. Conclusions. Implications for governance are presented, along with discussion of ethics-washing practices in industry.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2601.16513v1"
+      }
+    },
+    {
+      "id": "arxiv:2605.21825v1",
+      "title": "Toward AI VIS Co-Scientists: A General and End-to-End Agent Harness for Solving Complex Data Visualization Tasks",
+      "url": "http://arxiv.org/abs/2605.21825v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Haichao Miao",
+        "Zhimin Li",
+        "Kuangshi Ai",
+        "Kaiyuan Tang",
+        "Chaoli Wang",
+        "Peer-Timo Bremer",
+        "Shusen Liu"
+      ],
+      "published_date": "2026-05-20T23:49:28Z",
+      "summary": "The ability to inspect, interpret, and communicate complex data is crucial for virtually any scientific endeavor, but often requires significant expertise outside the core domain ranging from data management and analysis to visualization design and implementation. We present an end-to-end agentic harness that, based on only the data and a high level description of the tasks, independently designs custom visual analysis applications (VIS apps). This represents an important step towards a general AI co-scientist envisioned by many as an autonomous system that can autonomously execute long horizon tasks based on high-level directions. Our proposed VIS co-scientist is an essential component of this broader AI co-scientist vision: a harness that can autonomously analyze data and design visualization solutions using a collection of agents and specialized skills that coordinate exploratory analysis, plan, configure the environment, implement, validate the interface, and most importantly evaluate the overall task completion. Each stage produces document and instruction artifacts that guide downstream work and enable iterative refinement. We validate this approach on IEEE SciVis Contests spanning multiple science and engineering fields. These contests serve as ideal proving grounds because they encode real-world complexity: ambiguous requirements, diverse data modalities, design trade-offs, and task-driven validation. Given only the data and target tasks, our system autonomously produces functional single-page VIS Apps with verified linked-view behavior, highly customized to domain experts' specified tasks and needs.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2605.21825v1"
+      }
+    },
+    {
+      "id": "arxiv:1206.0021v1",
+      "title": "Clinical Productivity System - A Decision Support Model",
+      "url": "http://arxiv.org/abs/1206.0021v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Casey C. Bennett"
+      ],
+      "published_date": "2012-05-31T20:15:35Z",
+      "summary": "Purpose: This goal of this study was to evaluate the effects of a data-driven clinical productivity system that leverages Electronic Health Record (EHR) data to provide productivity decision support functionality in a real-world clinical setting. The system was implemented for a large behavioral health care provider seeing over 75,000 distinct clients a year. Design/methodology/approach: The key metric in this system is a \"VPU\", which simultaneously optimizes multiple aspects of clinical care. The resulting mathematical value of clinical productivity was hypothesized to tightly link the organization's performance to its expectations and, through transparency and decision support tools at the clinician level, affect significant changes in productivity, quality, and consistency relative to traditional models of clinical productivity. Findings: In only 3 months, every single variable integrated into the VPU system showed significant improvement, including a 30% rise in revenue, 10% rise in clinical percentage, a 25% rise in treatment plan completion, a 20% rise in case rate eligibility, along with similar improvements in compliance/audit issues, outcomes collection, access, etc. Practical implications: A data-driven clinical productivity system employing decision support functionality is effective because of the impact on clinician behavior relative to traditional clinical productivity systems. Critically, the model is also extensible to integration with outcomes-based productivity. Originality/Value: EHR's are only a first step - the problem is turning that data into useful information. Technology can leverage the data in order to produce actionable information that can inform clinical practice and decision-making. Without additional technology, EHR's are essentially just copies of paper-based records stored in electronic form.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "1206.0021v1"
+      }
+    }
+  ],
+  "insights": [
+    {
+      "source_id": "arxiv:2603.28944v2",
+      "source_title": "Faith in AI can narrow the futures individuals consider",
+      "key_insight": "Fundamentação teórica extraída de: Artificial intelligence (AI) predictions are increasingly used to inform human decisions. Here, using a behavioral implementation of the classic Newcomb's paradox in 1,305 participants, we show that AI predictions can also shape the reasoni...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2603.28944v2"
+      ]
+    },
+    {
+      "source_id": "arxiv:2501.02842v1",
+      "source_title": "Foundations of GenIR",
+      "key_insight": "Fundamentação teórica extraída de: The chapter discusses the foundational impact of modern generative AI models on information access (IA) systems. In contrast to traditional AI, the large-scale training and superior data modeling of generative AI models enable them to produ...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2501.02842v1"
+      ]
+    },
+    {
+      "source_id": "arxiv:2601.16513v1",
+      "source_title": "Competing Visions of Ethical AI: A Case Study of OpenAI",
+      "key_insight": "Fundamentação teórica extraída de: Introduction. AI Ethics is framed distinctly across actors and stakeholder groups. We report results from a case study of OpenAI analysing ethical AI discourse. Method. Research addressed: How has OpenAI's public discourse leveraged 'ethics...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2601.16513v1"
+      ]
+    },
+    {
+      "source_id": "arxiv:2605.21825v1",
+      "source_title": "Toward AI VIS Co-Scientists: A General and End-to-End Agent Harness for Solving Complex Data Visualization Tasks",
+      "key_insight": "Fundamentação teórica extraída de: The ability to inspect, interpret, and communicate complex data is crucial for virtually any scientific endeavor, but often requires significant expertise outside the core domain ranging from data management and analysis to visualization de...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2605.21825v1"
+      ]
+    },
+    {
+      "source_id": "arxiv:1206.0021v1",
+      "source_title": "Clinical Productivity System - A Decision Support Model",
+      "key_insight": "Fundamentação teórica extraída de: Purpose: This goal of this study was to evaluate the effects of a data-driven clinical productivity system that leverages Electronic Health Record (EHR) data to provide productivity decision support functionality in a real-world clinical se...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "1206.0021v1"
+      ]
+    }
+  ],
+  "decisions_linked": [],
+  "related_tickets": []
+}
