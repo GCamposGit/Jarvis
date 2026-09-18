@@ -1,5 +1,23 @@
 [
   {
+    "pack_id": "pack_20260918_212945_a91aa2",
+    "session_id": "session_20260918_212945",
+    "timestamp": "2026-09-18T21:29:45.736568+00:00",
+    "title": "Real-time Token Consumption Telemetry and Budget Governance",
+    "executive_summary": "This session reinforced 3 state-of-the-art engineering concepts: Pareto Efficiency Frontier Optimization, Deterministic Finite State Machine (FSM) Lifecycle, Headless Decoupling & ...",
+    "concepts_count": 3,
+    "flashcards_count": 6,
+    "concept_names": [
+      "Pareto Efficiency Frontier Optimization",
+      "Deterministic Finite State Machine (FSM) Lifecycle",
+      "Headless Decoupling & Reachability Architecture"
+    ],
+    "file_json": "pack_20260918_212945_a91aa2.json",
+    "file_md": "pack_20260918_212945_a91aa2.md",
+    "file_html": "pack_20260918_212945_a91aa2.html",
+    "file_anki": "pack_20260918_212945_a91aa2_anki.tsv"
+  },
+  {
     "pack_id": "pack_20260918_210426_f6d63c",
     "session_id": "session_20260918_210426",
     "timestamp": "2026-09-18T21:04:26.283094+00:00",

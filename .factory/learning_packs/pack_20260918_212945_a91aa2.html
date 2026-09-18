@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-time Token Consumption Telemetry and Budget Governance | DarkFac Learning Pack</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(22, 30, 49, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --accent-purple: #8b5cf6;
+      --accent-emerald: #10b981;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 2rem 1.5rem;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 1.5rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+    .meta-bar {
+      display: flex;
+      gap: 1.5rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+    .summary-box {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.9) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2.5rem;
+      box-shadow: 0 8px 24px -6px rgba(0,0,0,0.5);
+    }
+    .concept-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      transition: border-color 0.2s;
+    }
+    .concept-card:hover {
+      border-color: rgba(99, 102, 241, 0.4);
+    }
+    .concept-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+    .concept-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #ffffff;
+    }
+    .anchor-quote {
+      font-style: italic;
+      color: #93c5fd;
+      background: rgba(30, 58, 138, 0.25);
+      border-left: 3px solid var(--accent-blue);
+      padding: 0.75rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 1.25rem;
+      font-size: 0.95rem;
+    }
+    .tab-bar {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 0.5rem;
+    }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .tab-btn.active {
+      color: var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.12);
+      border-color: rgba(6, 182, 212, 0.3);
+    }
+    .tier-content {
+      display: none;
+      padding: 1rem;
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+    .tier-content.active {
+      display: block;
+    }
+    .defense-box {
+      background: rgba(139, 92, 246, 0.08);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+    .defense-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #c4b5fd;
+      margin-bottom: 0.5rem;
+    }
+    .copy-btn {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid var(--accent-blue);
+      color: #ffffff;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover {
+      background: var(--accent-blue);
+    }
+    /* Interactive Flashcards 3D flip */
+    .flashcard-section {
+      margin-top: 3rem;
+      border-top: 1px solid var(--card-border);
+      padding-top: 2rem;
+    }
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .flip-card {
+      background-color: transparent;
+      height: 220px;
+      perspective: 1000px;
+      cursor: pointer;
+    }
+    .flip-card-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      text-align: center;
+      transition: transform 0.5s;
+      transform-style: preserve-3d;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    }
+    .flip-card.flipped .flip-card-inner {
+      transform: rotateY(180deg);
+    }
+    .flip-card-front, .flip-card-back {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .flip-card-front {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #f8fafc;
+    }
+    .flip-card-back {
+      background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      color: #e2e8f0;
+      transform: rotateY(180deg);
+      font-size: 0.88rem;
+      text-align: left;
+      overflow-y: auto;
+    }
+    .flip-hint {
+      font-size: 0.72rem;
+      color: var(--accent-cyan);
+      margin-top: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--accent-emerald);
+      color: #ffffff;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .toast.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <span class="badge">Session Technical Learning Pack</span>
+      <h1>Real-time Token Consumption Telemetry and Budget Governance</h1>
+      <div class="meta-bar">
+        <span>Session: <strong>session_20260918_212945</strong></span>
+        <span>Generated: <strong>2026-09-18 21:29:45 UTC</strong></span>
+        <span>Concepts: <strong>3</strong></span>
+        <span>Flashcards: <strong>6</strong></span>
+      </div>
+    </header>
+
+    <div class="summary-box">
+      <strong>Executive Brief:</strong> This session reinforced 3 state-of-the-art engineering concepts: Pareto Efficiency Frontier Optimization, Deterministic Finite State Machine (FSM) Lifecycle, Headless Decoupling &amp; Reachability Architecture. All implementations adhere to Universal Engineering Standards with strict typing, headless reachability, and deterministic validation gates.
+    </div>
+
+    <!-- Concepts List -->
+    <div id="concepts-container">
+
+      <div class="concept-card" id="card-concept-0">
+        <div class="concept-header">
+          <div>
+            <div style="font-size: 0.8rem; color: var(--accent-cyan); font-weight: 600; text-transform: uppercase;">Concept 1 &bull; Algorithms &amp; Data Structures</div>
+            <div class="concept-title">Pareto Efficiency Frontier Optimization</div>
+          </div>
+          <button class="copy-btn" onclick="copyPitch('0')">📋 Copy Pitch</button>
+        </div>
+
+        <div class="anchor-quote">
+          ⚓ <strong>Mental Anchor:</strong> Like an all-you-can-eat buffet with a calorie budget: you cannot get more protein without either paying more or cutting desserts.
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchTab('0', 'pitch')">🎙️ 30s Pitch</button>
+          <button class="tab-btn" onclick="switchTab('0', 'staff')">🏛️ Staff Architect</button>
+          <button class="tab-btn" onclick="switchTab('0', 'hood')">⚙️ Under The Hood</button>
+        </div>
+
+        <div class="tier-content active" id="tab-0-pitch">
+          <strong>For Non-Technical Stakeholders & Executives:</strong><br>
+          We implemented a mathematical Pareto filter that automatically selects the highest-intelligence AI models at the lowest possible cost, rejecting any option that is simultaneously slower, pricier, and less accurate.
+        </div>
+
+        <div class="tier-content" id="tab-0-staff">
+          <strong>Staff-Level Architectural Defense & Trade-offs:</strong><br>
+          Multi-objective optimization mapping models onto a 2D Pareto frontier (Intelligence vs Cost/Latency). Guarantees O(N log N) or O(N^2) non-dominated sorting so routing decisions strictly maximize cost-performance efficiency.
+        </div>
+
+        <div class="tier-content" id="tab-0-hood">
+          <strong>Engine Room Mechanics & Data Structures:</strong><br>
+          Iterates through candidate points (x=cost, y=score). Candidate A dominates B if A.score &gt;= B.score and A.cost &lt;= B.cost with at least one strict inequality. Points not dominated by any other point form the convex frontier.
+        </div>
+
+        <div class="defense-box">
+          <div class="defense-title">🛡️ Third-Party Defense Shield</div>
+          <strong>Q: Why calculate a Pareto frontier instead of a simple weighted score (e.g. 0.5*IQ + 0.5*Price)?</strong><br>
+          <span style="color: #cbd5e1; font-size: 0.9rem;">A: Weighted sums require arbitrary weights that break when unit scales change or stakeholder priorities shift. A Pareto frontier provides the complete non-dominated truth set, allowing dynamic selection at runtime without bias.</span>
+        </div>
+      </div>
+
+      <div class="concept-card" id="card-concept-1">
+        <div class="concept-header">
+          <div>
+            <div style="font-size: 0.8rem; color: var(--accent-cyan); font-weight: 600; text-transform: uppercase;">Concept 2 &bull; Architecture</div>
+            <div class="concept-title">Deterministic Finite State Machine (FSM) Lifecycle</div>
+          </div>
+          <button class="copy-btn" onclick="copyPitch('1')">📋 Copy Pitch</button>
+        </div>
+
+        <div class="anchor-quote">
+          ⚓ <strong>Mental Anchor:</strong> Like an automated subway turnstile: you cannot enter until the ticket validates, and you cannot swipe twice without passing through.
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchTab('1', 'pitch')">🎙️ 30s Pitch</button>
+          <button class="tab-btn" onclick="switchTab('1', 'staff')">🏛️ Staff Architect</button>
+          <button class="tab-btn" onclick="switchTab('1', 'hood')">⚙️ Under The Hood</button>
+        </div>
+
+        <div class="tier-content active" id="tab-1-pitch">
+          <strong>For Non-Technical Stakeholders & Executives:</strong><br>
+          We built a rigid state machine so tasks can only advance step-by-step through strict checkpoints (planned, built, tested, reviewed), preventing premature merges or phantom bugs.
+        </div>
+
+        <div class="tier-content" id="tab-1-staff">
+          <strong>Staff-Level Architectural Defense & Trade-offs:</strong><br>
+          Deterministic discrete lifecycle transitions enforced by an immutable state ledger. Disallows illegal state jumps (e.g., TRIAGED directly to MERGED) and enforces strict priority ordering on task resumption.
+        </div>
+
+        <div class="tier-content" id="tab-1-hood">
+          <strong>Engine Room Mechanics & Data Structures:</strong><br>
+          Enumerated states stored in atomic JSON with transition history tracking. Priority dispatcher evaluates tasks using a waterfall check: NEEDS_FIX &gt; VALIDATING &gt; PLANNED &gt; TRIAGED.
+        </div>
+
+        <div class="defense-box">
+          <div class="defense-title">🛡️ Third-Party Defense Shield</div>
+          <strong>Q: Why not allow agents to mark tasks directly as done if all checks pass?</strong><br>
+          <span style="color: #cbd5e1; font-size: 0.9rem;">A: Allowing agents to bypass intermediate state validation creates silent failures and unreviewable side effects. The state machine ensures every state transition produces an audit trail and triggers deterministic verification.</span>
+        </div>
+      </div>
+
+      <div class="concept-card" id="card-concept-2">
+        <div class="concept-header">
+          <div>
+            <div style="font-size: 0.8rem; color: var(--accent-cyan); font-weight: 600; text-transform: uppercase;">Concept 3 &bull; Architecture</div>
+            <div class="concept-title">Headless Decoupling &amp; Reachability Architecture</div>
+          </div>
+          <button class="copy-btn" onclick="copyPitch('2')">📋 Copy Pitch</button>
+        </div>
+
+        <div class="anchor-quote">
+          ⚓ <strong>Mental Anchor:</strong> Like a modern car engine that can be controlled either by the dashboard pedals or by an external diagnostic computer via the OBD-II port.
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchTab('2', 'pitch')">🎙️ 30s Pitch</button>
+          <button class="tab-btn" onclick="switchTab('2', 'staff')">🏛️ Staff Architect</button>
+          <button class="tab-btn" onclick="switchTab('2', 'hood')">⚙️ Under The Hood</button>
+        </div>
+
+        <div class="tier-content active" id="tab-2-pitch">
+          <strong>For Non-Technical Stakeholders & Executives:</strong><br>
+          We decoupled the application logic completely from the user interface, meaning every single feature can be run and tested headlessly by automated scripts without opening a browser.
+        </div>
+
+        <div class="tier-content" id="tab-2-staff">
+          <strong>Staff-Level Architectural Defense & Trade-offs:</strong><br>
+          Strict separation between presentation frameworks (FastAPI/HTML/CLI) and domain service singletons (`HubService`). Ensures 100% of business logic is testable in-memory or via unit tests without mocking UI rendering.
+        </div>
+
+        <div class="tier-content" id="tab-2-hood">
+          <strong>Engine Room Mechanics & Data Structures:</strong><br>
+          Domain services expose pure Python typed methods. Web routers act as thin HTTP adapters with dependency injection (`Depends(get_hub_service)`), returning typed Pydantic response models.
+        </div>
+
+        <div class="defense-box">
+          <div class="defense-title">🛡️ Third-Party Defense Shield</div>
+          <strong>Q: Why not write endpoint logic directly inside route handlers to reduce boilerplate?</strong><br>
+          <span style="color: #cbd5e1; font-size: 0.9rem;">A: Writing logic inside route handlers couples domain behavior to HTTP request/response lifecycles, making headless CLI automation, unit testing, and background workers difficult or impossible to execute without spin-up overhead.</span>
+        </div>
+      </div>
+
+    <!-- Active Recall Flashcards -->
+    <div class="flashcard-section">
+      <h2>🃏 Active Recall Flashcards (Spaced Repetition)</h2>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
+        Click any card to flip and verify your understanding:
+      </p>
+      <div class="cards-grid">
+
+        <div class="flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <strong style="font-size: 0.95rem;">How would you explain &#x27;Pareto Efficiency Frontier Optimization&#x27; in 30 seconds to a non-technical client or executive?</strong>
+              <div class="flip-hint">👆 Click to Flip</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Answer:</strong><br>
+              <div style="margin-top: 0.4rem;">We implemented a mathematical Pareto filter that automatically selects the highest-intelligence AI models at the lowest possible cost, rejecting any option that is simultaneously slower, pricier, and less accurate.</div>
+              <div style="margin-top: 0.6rem; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.4rem;">
+                <em>Key takeaway:</em> Communicating technical value clearly to stakeholders builds trust and prevents misalignment.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <strong style="font-size: 0.95rem;">Defense Shield: Why calculate a Pareto frontier instead of a simple weighted score (e.g. 0.5*IQ + 0.5*Price)?</strong>
+              <div class="flip-hint">👆 Click to Flip</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Answer:</strong><br>
+              <div style="margin-top: 0.4rem;">Weighted sums require arbitrary weights that break when unit scales change or stakeholder priorities shift. A Pareto frontier provides the complete non-dominated truth set, allowing dynamic selection at runtime without bias.</div>
+              <div style="margin-top: 0.6rem; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.4rem;">
+                <em>Key takeaway:</em> Staff+ engineers must defend design decisions against valid skepticism with facts and trade-offs.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <strong style="font-size: 0.95rem;">How would you explain &#x27;Deterministic Finite State Machine (FSM) Lifecycle&#x27; in 30 seconds to a non-technical client or executive?</strong>
+              <div class="flip-hint">👆 Click to Flip</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Answer:</strong><br>
+              <div style="margin-top: 0.4rem;">We built a rigid state machine so tasks can only advance step-by-step through strict checkpoints (planned, built, tested, reviewed), preventing premature merges or phantom bugs.</div>
+              <div style="margin-top: 0.6rem; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.4rem;">
+                <em>Key takeaway:</em> Communicating technical value clearly to stakeholders builds trust and prevents misalignment.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <strong style="font-size: 0.95rem;">Defense Shield: Why not allow agents to mark tasks directly as done if all checks pass?</strong>
+              <div class="flip-hint">👆 Click to Flip</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Answer:</strong><br>
+              <div style="margin-top: 0.4rem;">Allowing agents to bypass intermediate state validation creates silent failures and unreviewable side effects. The state machine ensures every state transition produces an audit trail and triggers deterministic verification.</div>
+              <div style="margin-top: 0.6rem; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.4rem;">
+                <em>Key takeaway:</em> Staff+ engineers must defend design decisions against valid skepticism with facts and trade-offs.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <strong style="font-size: 0.95rem;">How would you explain &#x27;Headless Decoupling &amp; Reachability Architecture&#x27; in 30 seconds to a non-technical client or executive?</strong>
+              <div class="flip-hint">👆 Click to Flip</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Answer:</strong><br>
+              <div style="margin-top: 0.4rem;">We decoupled the application logic completely from the user interface, meaning every single feature can be run and tested headlessly by automated scripts without opening a browser.</div>
+              <div style="margin-top: 0.6rem; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.4rem;">
+                <em>Key takeaway:</em> Communicating technical value clearly to stakeholders builds trust and prevents misalignment.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <strong style="font-size: 0.95rem;">Defense Shield: Why not write endpoint logic directly inside route handlers to reduce boilerplate?</strong>
+              <div class="flip-hint">👆 Click to Flip</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Answer:</strong><br>
+              <div style="margin-top: 0.4rem;">Writing logic inside route handlers couples domain behavior to HTTP request/response lifecycles, making headless CLI automation, unit testing, and background workers difficult or impossible to execute without spin-up overhead.</div>
+              <div style="margin-top: 0.6rem; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.4rem;">
+                <em>Key takeaway:</em> Staff+ engineers must defend design decisions against valid skepticism with facts and trade-offs.
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Optional Discussion Topics -->
+    <div style="margin-top: 3rem; border-top: 1px solid var(--card-border); padding-top: 2rem;">
+      <h2 style="font-size: 1.3rem; margin-bottom: 0.5rem;">💬 Tópicos de Alinhamento & Discussão (Opcionais)</h2>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+        <em>A leitura é 100% opcional e não bloqueia produção nem pipelines subsequentes.</em>
+      </p>
+      <ul style="list-style-type: decimal; padding-left: 1.5rem; color: #cbd5e1; line-height: 1.7;">
+        <li style="margin-bottom: 0.5rem;">How can we further stress-test the deterministic invariants of Pareto Efficiency Frontier Optimization under high concurrency?</li>
+        <li style="margin-bottom: 0.5rem;">Are there additional edge-case boundaries in distributed state reconciliation that warrant explicit holding gates?</li>
+        <li style="margin-bottom: 0.5rem;">What telemetry or alert thresholds should be calibrated before expanding deployment scope?</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <div id="toast" class="toast">Elevator pitch copied to clipboard!</div>
+
+  <script>
+    const PACK_DATA = {pack_json};
+
+    function switchTab(conceptIdx, tabName) {{
+      const card = document.getElementById('card-concept-' + conceptIdx);
+      const btns = card.querySelectorAll('.tab-btn');
+      btns.forEach(b => b.classList.remove('active'));
+      const contents = card.querySelectorAll('.tier-content');
+      contents.forEach(c => c.classList.remove('active'));
+
+      const activeContent = document.getElementById('tab-' + conceptIdx + '-' + tabName);
+      if (activeContent) activeContent.classList.add('active');
+
+      event.target.classList.add('active');
+    }}
+
+    function copyPitch(conceptIdx) {{
+      const concept = PACK_DATA.concepts[conceptIdx];
+      if (!concept) return;
+      const pitchText = concept.tiers.pitch_30s;
+      navigator.clipboard.writeText(pitchText).then(() => {{
+        const toast = document.getElementById('toast');
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2200);
+      }});
+    }}
+  </script>
+</body>
+</html>
