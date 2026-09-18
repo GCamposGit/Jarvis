@@ -96,6 +96,11 @@ class JarvisConfig(BaseModel):
         default_factory=lambda: Path.cwd() / ".jarvis" / "audio"
     )
 
+    # Memory and Second Brain Settings
+    memory_db_path: Path = Field(
+        default_factory=lambda: Path(os.environ.get("JARVIS_MEMORY_DB", str(Path.cwd() / ".jarvis" / "memory.db")))
+    )
+
     # MCP Servers for Second Brain
     mcp_servers: Dict[str, MCPServerConfig] = Field(default_factory=dict)
 
@@ -104,4 +109,5 @@ def get_config() -> JarvisConfig:
     """Factory creating the current Jarvis configuration."""
     cfg = JarvisConfig()
     cfg.audio_upload_dir.mkdir(parents=True, exist_ok=True)
+    cfg.memory_db_path.parent.mkdir(parents=True, exist_ok=True)
     return cfg

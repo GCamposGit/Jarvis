@@ -47,6 +47,23 @@ class ToolCallRequest(BaseModel):
     arguments: Dict[str, Any] = Field(default_factory=dict)
 
 
+class StoreFactRequest(BaseModel):
+    key: str = Field(..., min_length=1)
+    value: str = Field(..., min_length=1)
+    category: str = "general"
+    tags: List[str] = Field(default_factory=list)
+    confidence: float = 1.0
+
+
+class LogDecisionRequest(BaseModel):
+    title: str = Field(..., min_length=2)
+    decision: str = Field(..., min_length=2)
+    problem_statement: str = ""
+    alternatives: List[str] = Field(default_factory=list)
+    rationale: str = ""
+    recorded_by: str = "operator"
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "0.1.0"
@@ -92,6 +109,8 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     app.state.darkfac = darkfac_client
     app.state.mcp = mcp_manager
     app.state.models = model_router
+    app.state.memory = assistant.memory
+    app.state.bizops = assistant.bizops
 
     # Ensure static directory exists
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,6 +178,91 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     @app.post("/api/mcp/call", response_model=MCPToolResult)
     async def call_mcp_tool(req: ToolCallRequest) -> MCPToolResult:
         return await mcp_manager.execute_tool(req.tool_name, req.arguments)
+
+    # Memory REST Endpoints
+    @app.get("/api/memory/facts")
+    async def get_memory_facts(
+        query: Optional[str] = None,
+        category: Optional[str] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        facts = app.state.memory.recall_facts(query=query, category=category, limit=limit)
+        return [f.model_dump() for f in facts]
+
+    @app.post("/api/memory/facts")
+    async def store_memory_fact(req: StoreFactRequest) -> Dict[str, Any]:
+        fact = app.state.memory.store_fact(
+            key=req.key,
+            value=req.value,
+            category=req.category,
+            tags=req.tags,
+            confidence=req.confidence,
+        )
+        return fact.model_dump()
+
+    @app.delete("/api/memory/facts/{key}")
+    async def delete_memory_fact(key: str) -> Dict[str, Any]:
+        success = app.state.memory.delete_fact(key)
+        return {"key": key, "deleted": success}
+
+    @app.get("/api/memory/decisions")
+    async def get_memory_decisions(
+        query: Optional[str] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        decisions = app.state.memory.query_decisions(query=query, limit=limit)
+        return [d.model_dump() for d in decisions]
+
+    @app.post("/api/memory/decisions")
+    async def log_memory_decision(req: LogDecisionRequest) -> Dict[str, Any]:
+        decision = app.state.memory.log_decision(
+            title=req.title,
+            decision=req.decision,
+            problem_statement=req.problem_statement,
+            alternatives=req.alternatives,
+            rationale=req.rationale,
+            recorded_by=req.recorded_by,
+        )
+        return decision.model_dump()
+
+    @app.get("/api/memory/failures")
+    async def get_memory_failures(
+        query: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        failures = app.state.memory.query_failed_attempts(action_query=query, limit=limit)
+        return [f.model_dump() for f in failures]
+
+    @app.get("/api/memory/episodes")
+    async def get_memory_episodes(limit: int = 10) -> List[Dict[str, Any]]:
+        episodes = app.state.memory.get_recent_episodes(limit=limit)
+        return [e.model_dump() for e in episodes]
+
+    # BizOps Autonomous Operations Endpoints
+    @app.get("/api/bizops/tasks")
+    async def get_bizops_tasks() -> List[Dict[str, Any]]:
+        tasks = app.state.bizops.list_tasks()
+        return [t.model_dump() for t in tasks]
+
+    @app.post("/api/bizops/tasks/{task_id}/trigger")
+    async def trigger_bizops_task(task_id: str) -> Dict[str, Any]:
+        res = await app.state.bizops.trigger_task(task_id)
+        return res.model_dump()
+
+    @app.get("/api/bizops/pending")
+    async def get_bizops_pending_actions(status: Optional[str] = None) -> List[Dict[str, Any]]:
+        pending = app.state.bizops.list_pending_actions(status=status)
+        return [p.model_dump() for p in pending]
+
+    @app.post("/api/bizops/pending/{action_id}/approve")
+    async def approve_bizops_action(action_id: str, operator: str = "operator") -> Dict[str, Any]:
+        res = await app.state.bizops.approve_action(action_id, operator=operator)
+        return res.model_dump()
+
+    @app.post("/api/bizops/pending/{action_id}/reject")
+    async def reject_bizops_action(action_id: str, operator: str = "operator") -> Dict[str, Any]:
+        success = app.state.bizops.reject_action(action_id, operator=operator)
+        return {"action_id": action_id, "rejected": success}
 
     # Static UI routes
     if STATIC_DIR.exists():

@@ -7,9 +7,11 @@ import logging
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
+from jarvis.core.bizops import BizOpsEngine
 from jarvis.core.config import JarvisConfig, get_config
 from jarvis.core.darkfac import DarkFactoryClient
 from jarvis.core.mcp import MCPManager
+from jarvis.core.memory import EpisodicMemoryEngine
 from jarvis.core.models import ChatMessage, ModelResponse, UnifiedModelRouter
 
 logger = logging.getLogger("jarvis.core.assistant")
@@ -52,12 +54,22 @@ class JarvisAssistant:
         model_router: Optional[UnifiedModelRouter] = None,
         darkfac_client: Optional[DarkFactoryClient] = None,
         mcp_manager: Optional[MCPManager] = None,
+        memory_engine: Optional[EpisodicMemoryEngine] = None,
+        bizops_engine: Optional[BizOpsEngine] = None,
     ) -> None:
         self.config = config or get_config()
         self.models = model_router or UnifiedModelRouter(self.config)
         self.darkfac = darkfac_client or DarkFactoryClient(self.config)
         self.mcp = mcp_manager or MCPManager(self.config)
+        self.memory = memory_engine or EpisodicMemoryEngine(self.config.memory_db_path)
+        self.bizops = bizops_engine or BizOpsEngine(
+            config=self.config,
+            memory_engine=self.memory,
+            darkfac_client=self.darkfac,
+        )
         self._register_darkfac_mcp_tools()
+        self._register_memory_mcp_tools()
+        self._register_bizops_mcp_tools()
 
     def _register_darkfac_mcp_tools(self) -> None:
         """Expose Dark Factory actions as MCP tools inside the assistant."""
@@ -125,6 +137,213 @@ class JarvisAssistant:
         except Exception as exc:
             return {"status": "offline", "error": str(exc)}
 
+    def _register_memory_mcp_tools(self) -> None:
+        """Expose Episodic Memory and Second Brain actions as MCP tools."""
+        from jarvis.core.mcp import MCPTool
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="store_memory_fact",
+                description="Armazena ou atualiza um fato, preferência do usuário, regra de negócio ou contexto no Segundo Cérebro.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string", "description": "Chave identificadora única do fato"},
+                        "value": {"type": "string", "description": "Descrição detalhada do fato ou preferência"},
+                        "category": {"type": "string", "default": "general", "description": "Categoria: user_preference, project_context, business_rule, tech_stack"},
+                        "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags para indexação"},
+                    },
+                    "required": ["key", "value"],
+                },
+                server_name="memory",
+            ),
+            handler=self._handle_store_memory_fact,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="recall_memory",
+                description="Busca fatos, preferências e anotações gravadas no Segundo Cérebro.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Termo de busca"},
+                        "category": {"type": "string", "description": "Filtro opcional de categoria"},
+                        "limit": {"type": "integer", "default": 5},
+                    },
+                },
+                server_name="memory",
+            ),
+            handler=self._handle_recall_memory,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="log_decision",
+                description="Registra formalmente uma decisão de arquitetura ou de negócio para manter consistência perpétua.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Título da decisão"},
+                        "decision": {"type": "string", "description": "A opção ou caminho decidido"},
+                        "rationale": {"type": "string", "description": "Justificativa da escolha"},
+                        "problem_statement": {"type": "string", "description": "Problema ou contexto resolvido"},
+                        "alternatives": {"type": "array", "items": {"type": "string"}, "description": "Outras opções consideradas"},
+                    },
+                    "required": ["title", "decision"],
+                },
+                server_name="memory",
+            ),
+            handler=self._handle_log_decision,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="record_failed_approach",
+                description="Registra uma abordagem que falhou ou gerou erro para evitar que futuros agentes repitam o mesmo erro.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "description": "Ação tentada"},
+                        "error_pattern": {"type": "string", "description": "Sintoma ou erro gerado"},
+                        "lesson_learned": {"type": "string", "description": "Lição aprendida e como contornar"},
+                    },
+                    "required": ["action", "error_pattern", "lesson_learned"],
+                },
+                server_name="memory",
+            ),
+            handler=self._handle_record_failed_approach,
+        )
+
+    def _handle_store_memory_fact(self, args: Dict[str, Any]) -> Any:
+        fact = self.memory.store_fact(
+            key=args.get("key", ""),
+            value=args.get("value", ""),
+            category=args.get("category", "general"),
+            tags=args.get("tags", []),
+        )
+        return {"status": "stored", "key": fact.key, "category": fact.category}
+
+    def _handle_recall_memory(self, args: Dict[str, Any]) -> Any:
+        facts = self.memory.recall_facts(
+            query=args.get("query"),
+            category=args.get("category"),
+            limit=args.get("limit", 5),
+        )
+        return [f.model_dump() for f in facts]
+
+    def _handle_log_decision(self, args: Dict[str, Any]) -> Any:
+        dec = self.memory.log_decision(
+            title=args.get("title", ""),
+            decision=args.get("decision", ""),
+            alternatives=args.get("alternatives", []),
+            rationale=args.get("rationale", ""),
+            problem_statement=args.get("problem_statement", ""),
+        )
+        return dec.model_dump()
+
+    def _handle_record_failed_approach(self, args: Dict[str, Any]) -> Any:
+        att = self.memory.record_failed_attempt(
+            action=args.get("action", ""),
+            error_pattern=args.get("error_pattern", ""),
+            lesson_learned=args.get("lesson_learned", ""),
+        )
+        return att.model_dump()
+
+    def _register_bizops_mcp_tools(self) -> None:
+        """Expose Autonomous BizOps tasks and HITL actions as MCP tools."""
+        from jarvis.core.mcp import MCPTool
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="list_bizops_tasks",
+                description="Lista todas as tarefas de operações de negócios autônomas (BizOps) cadastradas no Jarvis.",
+                parameters={"type": "object", "properties": {}},
+                server_name="bizops",
+            ),
+            handler=self._handle_list_bizops_tasks,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="trigger_bizops_task",
+                description="Dispara a execução imediata de uma tarefa operacional (ex: task_standup, task_backlog_hygiene, task_health_pulse).",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string", "description": "ID da tarefa a executar"},
+                    },
+                    "required": ["task_id"],
+                },
+                server_name="bizops",
+            ),
+            handler=self._handle_trigger_bizops_task,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="list_pending_bizops_actions",
+                description="Lista ações que exigem autorização humana (HITL Nível 2) antes de produzir efeitos externos.",
+                parameters={"type": "object", "properties": {}},
+                server_name="bizops",
+            ),
+            handler=self._handle_list_pending_bizops_actions,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="approve_bizops_action",
+                description="Aprova e executa uma ação pendente sob controle humano (HITL).",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "action_id": {"type": "string", "description": "ID da ação pendente a aprovar"},
+                        "operator": {"type": "string", "default": "operator", "description": "Nome ou identificador do operador"},
+                    },
+                    "required": ["action_id"],
+                },
+                server_name="bizops",
+            ),
+            handler=self._handle_approve_bizops_action,
+        )
+
+    def _handle_list_bizops_tasks(self, args: Dict[str, Any]) -> Any:
+        tasks = self.bizops.list_tasks()
+        return [t.model_dump() for t in tasks]
+
+    def _handle_trigger_bizops_task(self, args: Dict[str, Any]) -> Any:
+        import asyncio
+        task_id = args.get("task_id", "")
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    res = pool.submit(asyncio.run, self.bizops.trigger_task(task_id)).result()
+                    return res.model_dump()
+            return loop.run_until_complete(self.bizops.trigger_task(task_id)).model_dump()
+        except Exception as exc:
+            return {"status": "error", "message": str(exc)}
+
+    def _handle_list_pending_bizops_actions(self, args: Dict[str, Any]) -> Any:
+        pending = self.bizops.list_pending_actions()
+        return [p.model_dump() for p in pending]
+
+    def _handle_approve_bizops_action(self, args: Dict[str, Any]) -> Any:
+        import asyncio
+        action_id = args.get("action_id", "")
+        op = args.get("operator", "operator")
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    res = pool.submit(asyncio.run, self.bizops.approve_action(action_id, operator=op)).result()
+                    return res.model_dump()
+            return loop.run_until_complete(self.bizops.approve_action(action_id, operator=op)).model_dump()
+        except Exception as exc:
+            return {"status": "error", "message": str(exc)}
+
     async def chat(
         self,
         user_message: str,
@@ -133,8 +352,14 @@ class JarvisAssistant:
         provider: Optional[str] = None,
     ) -> AssistantTurnResult:
         """Process a conversation turn with tools support."""
+        # Inject memory brief if available
+        memory_brief = self.memory.build_context_brief(user_message)
+        system_content = SYSTEM_PROMPT
+        if memory_brief:
+            system_content = f"{SYSTEM_PROMPT}\n\n{memory_brief}"
+
         messages: List[ChatMessage] = [
-            ChatMessage(role="system", content=SYSTEM_PROMPT)
+            ChatMessage(role="system", content=system_content)
         ]
         if history:
             messages.extend(history)
@@ -228,6 +453,14 @@ class JarvisAssistant:
                         logger.warning("Second-turn synthesis failed: %s", exc)
                         if not response_text:
                             response_text = f"Ação executada com sucesso: `{tools_executed[0].get('tool')}`."
+
+            try:
+                self.memory.record_episode(
+                    summary=f"User: {user_message[:100]} | Jarvis: {response_text[:120]}",
+                    tags=["chat", resp.model],
+                )
+            except Exception as exc:
+                logger.debug("Could not record episodic note: %s", exc)
 
             return AssistantTurnResult(
                 response_text=response_text,
