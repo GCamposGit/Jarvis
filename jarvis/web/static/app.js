@@ -828,6 +828,13 @@ function speakResponse(markdownText) {
   }
 }
 
+function formatUsdAmount(val) {
+  if (val === undefined || val === null || isNaN(val)) return '0.00';
+  const num = Number(val);
+  if (num > 0 && num < 0.01) return num.toFixed(3);
+  return num.toFixed(2);
+}
+
 async function refreshTelemetry() {
   try {
     const [summaryRes, budgetRes] = await Promise.all([
@@ -842,15 +849,20 @@ async function refreshTelemetry() {
     const status = budgetData.status || {};
     const policy = budgetData.policy || {};
 
+    const dailySpentNum = Number(status.daily_spent_usd ?? status.daily_spend_usd ?? 0.0);
+    const dailyLimitNum = Number(status.daily_limit_usd ?? policy.daily_limit_usd ?? 2.0);
+    const totalSavingsNum = Number(summary.total_savings_usd ?? 0.0);
+    const promptTok = Number(summary.prompt_tokens ?? summary.total_prompt_tokens ?? 0);
+    const compTok = Number(summary.completion_tokens ?? summary.total_completion_tokens ?? 0);
+    const totalTok = Number(summary.total_tokens ?? (promptTok + compTok));
+
     // 1. Header Badges
     const budgetDot = document.getElementById('budget-dot');
     const budgetText = document.getElementById('budget-text');
     const savingsText = document.getElementById('savings-text');
 
     if (budgetText) {
-      const dailySpent = status.daily_spend_usd !== undefined ? status.daily_spend_usd.toFixed(2) : '0.00';
-      const dailyLimit = status.daily_limit_usd !== undefined ? status.daily_limit_usd.toFixed(2) : '2.00';
-      budgetText.innerText = `Gasto: $${dailySpent} / $${dailyLimit}`;
+      budgetText.innerText = `Gasto: $${formatUsdAmount(dailySpentNum)} / $${formatUsdAmount(dailyLimitNum)}`;
     }
 
     if (budgetDot) {
@@ -864,8 +876,7 @@ async function refreshTelemetry() {
     }
 
     if (savingsText) {
-      const savings = summary.total_savings_usd !== undefined ? summary.total_savings_usd.toFixed(2) : '0.00';
-      savingsText.innerText = `Economia: $${savings}`;
+      savingsText.innerText = `Economia: $${formatUsdAmount(totalSavingsNum)}`;
     }
 
     // 2. Sidebar Card Details
@@ -885,8 +896,13 @@ async function refreshTelemetry() {
       }
     }
 
-    if (cardBar && status.daily_limit_usd > 0) {
-      const pct = Math.min(100, Math.round((status.daily_spend_usd / status.daily_limit_usd) * 100));
+    if (cardBar) {
+      let pct = 0;
+      if (dailyLimitNum > 0) {
+        pct = Math.min(100, Math.round((dailySpentNum / dailyLimitNum) * 100));
+      } else if (dailySpentNum > 0) {
+        pct = 100;
+      }
       cardBar.style.width = `${pct}%`;
       if (pct >= 100) {
         cardBar.className = 'bg-red-500 h-2 rounded-full transition-all duration-300';
@@ -898,10 +914,10 @@ async function refreshTelemetry() {
     }
 
     if (cardDailySpend) {
-      cardDailySpend.innerText = `$${(status.daily_spend_usd || 0).toFixed(2)} gasto`;
+      cardDailySpend.innerText = `$${formatUsdAmount(dailySpentNum)} gasto`;
     }
     if (cardDailyLimit) {
-      cardDailyLimit.innerText = `Teto: $${(status.daily_limit_usd || 2).toFixed(2)}`;
+      cardDailyLimit.innerText = `Teto: $${formatUsdAmount(dailyLimitNum)}`;
     }
 
     // 3. Grid Metrics
@@ -910,13 +926,13 @@ async function refreshTelemetry() {
     const cardSavings = document.getElementById('card-total-savings');
 
     if (cardTokens) {
-      cardTokens.innerText = (summary.total_tokens || 0).toLocaleString();
+      cardTokens.innerText = totalTok.toLocaleString();
     }
     if (cardRatio) {
-      cardRatio.innerText = `Prompt: ${(summary.total_prompt_tokens || 0).toLocaleString()} | Comp: ${(summary.total_completion_tokens || 0).toLocaleString()}`;
+      cardRatio.innerText = `Prompt: ${promptTok.toLocaleString()} | Comp: ${compTok.toLocaleString()}`;
     }
     if (cardSavings) {
-      cardSavings.innerText = `$${(summary.total_savings_usd || 0).toFixed(2)}`;
+      cardSavings.innerText = `$${formatUsdAmount(totalSavingsNum)}`;
     }
 
     // 4. Breakdown by model
@@ -928,12 +944,13 @@ async function refreshTelemetry() {
       } else {
         modelsContainer.innerHTML = modelKeys.map(m => {
           const stats = summary.by_model[m];
-          const costStr = stats.cost_usd === 0 ? '$0.00' : `$${stats.cost_usd.toFixed(3)}`;
+          const costVal = Number(stats.cost_usd || 0);
+          const costStr = costVal === 0 ? '$0.00' : `$${formatUsdAmount(costVal)}`;
           return `
             <div class="p-2 rounded-lg bg-surface-850 border border-slate-800 text-[11px] flex items-center justify-between">
               <div class="truncate max-w-[150px]">
                 <div class="text-slate-300 font-medium truncate" title="${escapeHtml(m)}">${escapeHtml(m)}</div>
-                <div class="text-[10px] text-slate-500 font-mono">${stats.tokens.toLocaleString()} tok (${stats.calls}x)</div>
+                <div class="text-[10px] text-slate-500 font-mono">${(stats.tokens || 0).toLocaleString()} tok (${stats.calls || 0}x)</div>
               </div>
               <div class="text-right font-mono text-emerald-400 font-semibold">${costStr}</div>
             </div>
@@ -942,16 +959,29 @@ async function refreshTelemetry() {
       }
     }
 
-    // 5. Circuit Breaker
+    // 5. Circuit Breaker & Fallback Indicators
     const cardCbStatus = document.getElementById('card-cb-status');
     const cardCbFallback = document.getElementById('card-cb-fallback');
+    const isCbTripped = Boolean(status.circuit_breaker_active);
+    const isCbArmed = Boolean(policy.enforce_circuit_breaker ?? policy.circuit_breaker_enabled ?? true);
+
     if (cardCbStatus) {
-      cardCbStatus.innerText = policy.circuit_breaker_enabled ? 'Sim' : 'Não';
-      cardCbStatus.className = policy.circuit_breaker_enabled ? 'font-mono text-emerald-400' : 'font-mono text-slate-400';
+      if (isCbTripped) {
+        cardCbStatus.innerText = '🔴 Disparado (Bloqueio Nuvem)';
+        cardCbStatus.className = 'font-mono text-red-400 font-semibold';
+      } else if (isCbArmed) {
+        cardCbStatus.innerText = '🟢 Pronto (Armado)';
+        cardCbStatus.className = 'font-mono text-emerald-400';
+      } else {
+        cardCbStatus.innerText = '⚪ Desativado';
+        cardCbStatus.className = 'font-mono text-slate-400';
+      }
     }
+
     if (cardCbFallback) {
-      cardCbFallback.innerText = policy.fallback_to_local_on_limit ? 'Ativado' : 'Desativado';
-      cardCbFallback.className = policy.fallback_to_local_on_limit ? 'font-mono text-emerald-400' : 'font-mono text-slate-400';
+      const fallbackActive = Boolean(policy.auto_fallback_to_local ?? policy.fallback_to_local_on_limit ?? true);
+      cardCbFallback.innerText = fallbackActive ? '🟢 Ativado' : '⚪ Desativado';
+      cardCbFallback.className = fallbackActive ? 'font-mono text-emerald-400' : 'font-mono text-slate-400';
     }
 
   } catch (err) {

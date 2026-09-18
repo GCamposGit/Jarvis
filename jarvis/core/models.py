@@ -71,6 +71,7 @@ class UnifiedModelRouter:
         temperature: float = 0.7,
         max_tokens: int = 2048,
         tools: Optional[List[Dict[str, Any]]] = None,
+        allow_cloud_fallback: bool = True,
     ) -> ModelResponse:
         """Execute chat completion using selected provider."""
         start = time.perf_counter()
@@ -96,6 +97,24 @@ class UnifiedModelRouter:
                     tools=tools,
                 )
             except Exception as exc:
+                if not allow_cloud_fallback:
+                    logger.warning("Ollama call failed (%s) and cloud fallback is blocked by circuit breaker policy. Retrying local Ollama once...", exc)
+                    import asyncio
+                    await asyncio.sleep(1.0)
+                    try:
+                        return await self._call_ollama(
+                            messages,
+                            model=chosen_model,
+                            temperature=temperature,
+                            start_time=start,
+                            tools=tools,
+                        )
+                    except Exception as retry_exc:
+                        raise RuntimeError(
+                            f"Ollama local está ocupado ou inacessível ({retry_exc}). "
+                            f"O fallback para APIs pagas em nuvem foi bloqueado porque o circuit breaker de orçamento está ativo."
+                        ) from retry_exc
+
                 logger.warning("Ollama call failed (%s); attempting OpenRouter fallback.", exc)
                 if self.config.openrouter_api_key:
                     fallback_model = self.config.default_cloud_model

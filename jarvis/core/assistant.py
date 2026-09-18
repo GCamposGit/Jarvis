@@ -46,6 +46,7 @@ Instruções Mandatórias sobre Memória e Uso de Ferramentas:
 - **Armazenamento de Fatos na Memória Episódica (`store_memory_fact`)**: Sempre que o usuário disser "guarde", "lembre-se", "armazene", "registre o fato" ou declarar dados importantes sobre sua vida, preferências, família, ou operações de negócios, você DEVE acionar a ferramenta `store_memory_fact` para persistir o fato.
 - **Consulta à Memória Episódica (`recall_memory`)**: Sempre que o usuário perguntar sobre o que ele já te disse, sua memória ("sua memória", "o que você sabe sobre mim"), pessoas conhecidas, família, preferências pessoais ou métricas operacionais ditadas diretamente por ele, consulte a Memória Episódica (ou o bloco `[MEMÓRIA EPISÓDICA E CONTEXTO DO SEGUNDO CÉREBRO]` já injetado neste prompt). NUNCA faça busca no acervo corporativo (`search_second_brain`) para dados pessoais ou fatos operacionais declarados pelo usuário na conversa.
 - **Consulta ao Segundo Cérebro Corporativo (`search_second_brain`)**: Apenas acione `search_second_brain` quando o usuário perguntar expressamente sobre documentos, políticas internas formais (ex: PO, PR, PL), normas corporativas, contratos, apresentações institucionais ou notas técnicas do acervo da empresa. Com base nos trechos reais recuperados, cite códigos de documentos (ex: PO-CORP-007) e seções.
+- **Governança Orçamentária e Tetos (`update_budget_policy`)**: Sempre que o usuário solicitar ajuste, restauração ou mudança de limites diários ou mensais de orçamento ou circuit breaker (ex: "atualize o limite diário de volta para $2"), acione a ferramenta `update_budget_policy` para efetivar imediatamente a mudança no SQLite persistente.
 
 Diretrizes de Comunicação e Resposta (Dual-Channel Output):
 - **Resumo Falado Inicial**: Inicie sempre sua resposta com 1 ou 2 frases executivas, diretas e afirmativas. Esse primeiro trecho será sintetizado em voz para o operador.
@@ -660,6 +661,73 @@ class JarvisAssistant:
         )
         return self.telemetry.update_policy(updated).model_dump()
 
+    def _extract_budget_update_directive(self, user_message: str) -> Optional[Dict[str, Any]]:
+        """Deterministically extract and execute budget limit updates from user commands."""
+        clean = user_message.strip()
+
+        # Check circuit breaker toggle commands
+        if re.search(r"\b(?:desativ(?:e|ar)|deslig(?:ue|ar))\s+(?:o\s+)?(?:circuit\s+breaker|disjuntor)\b", clean, re.IGNORECASE):
+            new_policy = self.telemetry.update_policy(enforce_circuit_breaker=False)
+            return {
+                "target": "enforce_circuit_breaker",
+                "target_label": "Disjuntor",
+                "value": False,
+                "policy": new_policy,
+            }
+        if re.search(r"\b(?:ativ(?:e|ar)|lig(?:ue|ar)|arm(?:e|ar)|reset(?:e|ar)|redefin(?:a|ir))\s+(?:o\s+)?(?:circuit\s+breaker|disjuntor)\b", clean, re.IGNORECASE):
+            new_policy = self.telemetry.update_policy(enforce_circuit_breaker=True)
+            return {
+                "target": "enforce_circuit_breaker",
+                "target_label": "Disjuntor",
+                "value": True,
+                "policy": new_policy,
+            }
+
+        # Match budget update patterns like:
+        # "Jarvis, atualize o limite diário de volta para $2"
+        # "atualize o limite diário para 2 dólares"
+        # "mude o teto diário para 2"
+        # "volte o limite para $2"
+        pattern = re.compile(
+            r"(?:jarvis[,\s]+)?(?:atualiz(?:e|ar)|alter(?:e|ar)|modifi(?:que|car)|mud(?:e|ar)|ajust(?:e|ar)|defin(?:a|ir)|restaur(?:e|ar)|volt(?:e|ar)|retorn(?:e|ar)|coloc(?:a|ar)|aument(?:e|ar)|set(?:e|ar))\s+(?:de\s+volta\s+)?(?:o\s+)?(?:limite|teto|orçamento|orcamento|budget)(?:\s+(?:diário|diario|mensal|de\s+gastos))?(?:\s+de\s+volta)?(?:\s+(?:para|em|a|de))?\s*(?:(?:us?d?|r?\$)\s*)?([0-9]+(?:[\.,][0-9]+)?)\s*(?:dólares|dolares|usd|reais|\$)?",
+            re.IGNORECASE,
+        )
+        match = pattern.search(clean)
+        if not match:
+            # Check alternative ordering: e.g. "volte para $2 o limite diário"
+            alt_pattern = re.compile(
+                r"(?:jarvis[,\s]+)?(?:volt(?:e|ar)|retorn(?:e|ar)|mud(?:e|ar)|ajust(?:e|ar)|atualiz(?:e|ar))\s+(?:para\s+)?(?:(?:us?d?|r?\$)\s*)?([0-9]+(?:[\.,][0-9]+)?)\s*(?:dólares|dolares|usd|reais|\$)?\s*(?:o\s+)?(?:limite|teto|orçamento|orcamento|budget)",
+                re.IGNORECASE,
+            )
+            match = alt_pattern.search(clean)
+            if not match:
+                return None
+
+        val_str = match.group(1).replace(",", ".")
+        try:
+            val = float(val_str)
+        except ValueError:
+            return None
+
+        clean_lower = clean.lower()
+        is_monthly = "mensal" in clean_lower or "mês" in clean_lower or "mes" in clean_lower
+
+        if is_monthly:
+            new_policy = self.telemetry.update_policy(monthly_limit_usd=val)
+            target_name = "monthly_limit_usd"
+            target_label = "Mensal"
+        else:
+            new_policy = self.telemetry.update_policy(daily_limit_usd=val)
+            target_name = "daily_limit_usd"
+            target_label = "Diário"
+
+        return {
+            "target": target_name,
+            "target_label": target_label,
+            "value": val,
+            "policy": new_policy,
+        }
+
     def _extract_and_persist_facts(self, user_message: str) -> List[Dict[str, Any]]:
         """Deterministically extract and store facts if message starts with explicit memory directives."""
         clean = user_message.strip()
@@ -744,6 +812,47 @@ class JarvisAssistant:
     ) -> AssistantTurnResult:
         """Process a conversation turn with tools support."""
         tools_executed: List[Dict[str, Any]] = []
+
+        # 0. Proactive deterministic budget governance updates
+        budget_directive = self._extract_budget_update_directive(user_message)
+        if budget_directive:
+            pol = budget_directive["policy"]
+            val = budget_directive["value"]
+            label = budget_directive["target_label"]
+            tools_executed.append({
+                "tool": "update_budget_policy",
+                "arguments": {budget_directive["target"]: val},
+                "output": pol.model_dump(),
+                "is_error": False,
+            })
+            b_status = self.telemetry.get_budget_status()
+            cb_desc = "🔴 Disparado" if b_status.circuit_breaker_active else ("🟢 Armado" if pol.enforce_circuit_breaker else "⚪ Desativado")
+            fb_desc = "Ativado ($0 Ollama)" if pol.auto_fallback_to_local else "Desativado"
+            if budget_directive["target"] == "enforce_circuit_breaker":
+                status_text = "ativado" if val else "desativado"
+                msg_lead = f"Disjuntor de segurança orçamentária (Circuit Breaker) foi **{status_text}**."
+            else:
+                msg_lead = f"Limite de orçamento {label.lower()} atualizado com sucesso para **${val:.2f} USD**."
+
+            response_text = (
+                f"{msg_lead}\n\n"
+                f"### Governança Orçamentária Vigente\n"
+                f"- **Teto Diário**: `${pol.daily_limit_usd:.2f}` USD\n"
+                f"- **Teto Mensal**: `${pol.monthly_limit_usd:.2f}` USD\n"
+                f"- **Disjuntor (Circuit Breaker)**: `{cb_desc}`\n"
+                f"- **Fallback Local**: `{fb_desc}`\n\n"
+                f"A política foi persistida no banco SQLite e a telemetria do painel já reflete os novos parâmetros operacionais."
+            )
+            return AssistantTurnResult(
+                response_text=response_text,
+                model_used="internal-telemetry-router",
+                provider_used="builtin",
+                tools_executed=tools_executed,
+                latency_ms=0.0,
+                tokens_prompt=0,
+                tokens_completion=0,
+                cost_usd=0.0,
+            )
 
         # 1. Proactive deterministic memory storage extraction
         extracted_facts = self._extract_and_persist_facts(user_message)
@@ -865,6 +974,7 @@ class JarvisAssistant:
 
         # Check budget circuit breaker
         budget_st = self.telemetry.get_budget_status()
+        allow_cloud = not budget_st.circuit_breaker_active
         if budget_st.circuit_breaker_active:
             logger.warning("Budget limit active. Enforcing fallback to local model.")
             if not model or model != self.config.default_local_model:
@@ -879,6 +989,7 @@ class JarvisAssistant:
                 model=model,
                 provider=provider,
                 tools=tools_schema if tools_schema else None,
+                allow_cloud_fallback=allow_cloud,
             )
             response_text = resp.text
 
@@ -985,6 +1096,7 @@ class JarvisAssistant:
                             model=model,
                             provider=provider,
                             tools=None,
+                            allow_cloud_fallback=allow_cloud,
                         )
                         response_text = final_resp.text
                         self.telemetry.record_usage(

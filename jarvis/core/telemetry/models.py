@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class TokenUsageRecord(BaseModel):
@@ -26,6 +26,7 @@ class TokenUsageRecord(BaseModel):
     task_tag: str = "chat"
     details: Dict[str, Any] = Field(default_factory=dict)
 
+    @computed_field
     @property
     def savings_usd(self) -> float:
         """Estimated savings compared to proprietary baseline."""
@@ -35,13 +36,26 @@ class TokenUsageRecord(BaseModel):
 class BudgetPolicy(BaseModel):
     """Spending limits and circuit breaker policy."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="allow")
 
     daily_limit_usd: float = 2.00
     monthly_limit_usd: float = 30.00
     alert_threshold_pct: float = 80.0
     auto_fallback_to_local: bool = True
     enforce_circuit_breaker: bool = True
+    default_fallback_model: str = "qwen-code-deep:latest"
+
+    @computed_field
+    @property
+    def circuit_breaker_enabled(self) -> bool:
+        """Alias for enforce_circuit_breaker."""
+        return self.enforce_circuit_breaker
+
+    @computed_field
+    @property
+    def fallback_to_local_on_limit(self) -> bool:
+        """Alias for auto_fallback_to_local."""
+        return self.auto_fallback_to_local
 
 
 class BudgetStatus(BaseModel):
@@ -59,15 +73,23 @@ class BudgetStatus(BaseModel):
     circuit_breaker_active: bool = False
     message: str = "Orçamento dentro dos limites operacionais."
 
+    @computed_field
     @property
     def daily_spend_usd(self) -> float:
-        """Convenience alias for daily_spent_usd."""
+        """Convenience alias for daily_spent_usd serialized in JSON."""
         return self.daily_spent_usd
 
+    @computed_field
     @property
     def monthly_spend_usd(self) -> float:
-        """Convenience alias for monthly_spent_usd."""
+        """Convenience alias for monthly_spent_usd serialized in JSON."""
         return self.monthly_spent_usd
+
+    @computed_field
+    @property
+    def circuit_breaker_enabled(self) -> bool:
+        """Convenience alias for UI checks."""
+        return self.circuit_breaker_active
 
 
 class TelemetrySummary(BaseModel):
@@ -87,17 +109,32 @@ class TelemetrySummary(BaseModel):
     record_count: int = 0
     budget: BudgetStatus
 
+    @computed_field
     @property
     def total_calls(self) -> int:
         """Convenience alias for record_count."""
         return self.record_count
 
+    @computed_field
     @property
     def total_prompt_tokens(self) -> int:
-        """Convenience alias for prompt_tokens."""
+        """Convenience alias for prompt_tokens serialized in JSON."""
         return self.prompt_tokens
 
+    @computed_field
     @property
     def total_completion_tokens(self) -> int:
-        """Convenience alias for completion_tokens."""
+        """Convenience alias for completion_tokens serialized in JSON."""
         return self.completion_tokens
+
+    @computed_field
+    @property
+    def daily_spend_usd(self) -> float:
+        """Convenience alias for daily_spent_usd."""
+        return self.daily_spent_usd
+
+    @computed_field
+    @property
+    def total_spend_usd(self) -> float:
+        """Convenience alias for total_cost_usd."""
+        return self.total_cost_usd

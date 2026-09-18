@@ -280,8 +280,14 @@ class TelemetryEngine:
             new_daily = kwargs.get("daily_limit_usd", curr.daily_limit_usd)
             new_monthly = kwargs.get("monthly_limit_usd", curr.monthly_limit_usd)
             new_alert = kwargs.get("alert_threshold_pct", curr.alert_threshold_pct)
-            new_fallback = kwargs.get("auto_fallback_to_local", curr.auto_fallback_to_local)
-            new_cb = kwargs.get("enforce_circuit_breaker", curr.enforce_circuit_breaker)
+            new_fallback = kwargs.get(
+                "auto_fallback_to_local",
+                kwargs.get("fallback_to_local_on_limit", curr.auto_fallback_to_local),
+            )
+            new_cb = kwargs.get(
+                "enforce_circuit_breaker",
+                kwargs.get("circuit_breaker_enabled", curr.enforce_circuit_breaker),
+            )
 
         updated = BudgetPolicy(
             daily_limit_usd=float(new_daily),
@@ -322,8 +328,13 @@ class TelemetryEngine:
 
         with self._get_connection() as conn:
             cur = conn.cursor()
+            # Resilient to timezones: checks both UTC calendar day and rolling 24 hours
             cur.execute(
-                "SELECT COALESCE(SUM(cost_usd), 0.0) FROM token_usage_records WHERE timestamp LIKE ?",
+                """
+                SELECT COALESCE(SUM(cost_usd), 0.0)
+                FROM token_usage_records
+                WHERE timestamp LIKE ? OR timestamp >= datetime('now', '-24 hours')
+                """,
                 (f"{now_str}%",),
             )
             daily_spent = float(cur.fetchone()[0])

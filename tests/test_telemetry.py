@@ -331,3 +331,60 @@ def test_telemetry_web_api_endpoints(tmp_path: Path):
     assert len(records) >= 1
     assert records[0]["model"] == "google/gemini-2.5-flash"
     assert records[0]["prompt_tokens"] == 500
+
+
+@pytest.mark.anyio
+async def test_chat_budget_update_directive(tmp_path: Path):
+    """Verify conversational updates to budget policies via chat directives."""
+    cfg = JarvisConfig(memory_db_path=tmp_path / "chat_budget.db")
+    engine = TelemetryEngine(
+        db_path=cfg.memory_db_path,
+        policy=BudgetPolicy(daily_limit_usd=0.0, monthly_limit_usd=30.0),
+    )
+    assistant = JarvisAssistant(config=cfg, telemetry_engine=engine)
+
+    # Initial state: daily limit 0.0
+    assert assistant.telemetry.get_policy().daily_limit_usd == 0.0
+
+    # User command: "Jarvis, atualize o limite diário de volta para $2"
+    turn1 = await assistant.chat("Jarvis, atualize o limite diário de volta para $2")
+    assert "atualizado com sucesso" in turn1.response_text
+    assert assistant.telemetry.get_policy().daily_limit_usd == 2.0
+    assert turn1.tools_executed[0]["tool"] == "update_budget_policy"
+
+    # User command with alternative phrasing: "mude o limite diário para 5 dólares"
+    turn2 = await assistant.chat("mude o limite diário para 5 dólares")
+    assert assistant.telemetry.get_policy().daily_limit_usd == 5.0
+
+    # User command toggling circuit breaker: "desative o disjuntor"
+    turn3 = await assistant.chat("desative o disjuntor")
+    assert assistant.telemetry.get_policy().enforce_circuit_breaker is False
+
+    # User command re-enabling circuit breaker: "ative o circuit breaker"
+    turn4 = await assistant.chat("ative o circuit breaker")
+    assert assistant.telemetry.get_policy().enforce_circuit_breaker is True
+
+
+@pytest.mark.anyio
+async def test_circuit_breaker_blocks_cloud_fallback_on_ollama_failure():
+    """Verify that when allow_cloud_fallback=False, Ollama errors do NOT trigger OpenRouter/Google."""
+    cfg = JarvisConfig(
+        openrouter_api_key="sk-test-key",
+        default_local_model="qwen-code-deep:latest",
+        default_cloud_model="google/gemini-2.5-flash",
+    )
+    router = UnifiedModelRouter(cfg)
+
+    with patch.object(router, "_call_ollama", side_effect=RuntimeError("Ollama connection refused")):
+        with patch.object(router, "_call_openrouter", new=AsyncMock()) as mock_openrouter:
+            with pytest.raises(RuntimeError) as excinfo:
+                await router.generate(
+                    messages=[ChatMessage(role="user", content="Hello")],
+                    model="qwen-code-deep:latest",
+                    provider="ollama",
+                    allow_cloud_fallback=False,
+                )
+
+            assert "circuit breaker de orçamento está ativo" in str(excinfo.value)
+            mock_openrouter.assert_not_called()
+
