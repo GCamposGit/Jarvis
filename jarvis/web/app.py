@@ -84,6 +84,14 @@ class ValidateSafetyRequest(BaseModel):
     code: Optional[str] = None
 
 
+class UpdateBudgetRequest(BaseModel):
+    daily_limit_usd: Optional[float] = None
+    monthly_limit_usd: Optional[float] = None
+    circuit_breaker_enabled: Optional[bool] = None
+    fallback_to_local_on_limit: Optional[bool] = None
+    default_fallback_model: Optional[str] = None
+
+
 def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     """Factory creating and configuring the Jarvis FastAPI application."""
     cfg = config or get_config()
@@ -126,6 +134,7 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     app.state.harness = assistant.guardrail
     app.state.sandbox = assistant.sandbox
     app.state.harness_audit = assistant.audit
+    app.state.telemetry = assistant.telemetry
 
     # Ensure static directory exists
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -361,6 +370,35 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
                 "max_output_chars": policy.max_output_chars,
             },
         }
+
+    # Telemetry & Budget Governance Endpoints
+    @app.get("/api/telemetry/summary")
+    async def get_telemetry_summary() -> Dict[str, Any]:
+        return app.state.telemetry.get_summary().model_dump()
+
+    @app.get("/api/telemetry/budget")
+    async def get_telemetry_budget() -> Dict[str, Any]:
+        b_status = app.state.telemetry.get_budget_status()
+        policy = app.state.telemetry.policy
+        return {
+            "status": b_status.model_dump(),
+            "policy": policy.model_dump(),
+        }
+
+    @app.post("/api/telemetry/budget")
+    async def update_telemetry_budget(req: UpdateBudgetRequest) -> Dict[str, Any]:
+        updates = {k: v for k, v in req.model_dump().items() if v is not None}
+        new_policy = app.state.telemetry.update_policy(**updates)
+        new_status = app.state.telemetry.get_budget_status()
+        return {
+            "policy": new_policy.model_dump(),
+            "status": new_status.model_dump(),
+        }
+
+    @app.get("/api/telemetry/records")
+    async def get_telemetry_records(limit: int = 50) -> List[Dict[str, Any]]:
+        records = app.state.telemetry.list_records(limit=limit)
+        return [r.model_dump() for r in records]
 
     # Static UI routes
     if STATIC_DIR.exists():

@@ -240,7 +240,7 @@ class UnifiedModelRouter:
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
 
-        # Estimate or measure cost
+        cost_usd = self._estimate_cost(model, prompt_tokens, completion_tokens)
         return ModelResponse(
             text=text,
             model=model,
@@ -248,9 +248,27 @@ class UnifiedModelRouter:
             tokens_prompt=prompt_tokens,
             tokens_completion=completion_tokens,
             latency_ms=latency_ms,
-            cost_usd=0.0,
+            cost_usd=cost_usd,
             tool_calls=tool_calls,
         )
+
+    def _estimate_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
+        """Estimate inference cost in USD based on model pricing."""
+        lowered = model.lower()
+        if "ollama" in lowered or "local" in lowered:
+            return 0.0
+        try:
+            from jarvis.core.telemetry import PRICING_PER_1M
+            rates = (0.50, 1.50)
+            for key, val in PRICING_PER_1M.items():
+                if key in lowered:
+                    rates = val
+                    break
+            prompt_cost = (prompt_tokens / 1_000_000) * rates[0]
+            comp_cost = (completion_tokens / 1_000_000) * rates[1]
+            return round(prompt_cost + comp_cost, 6)
+        except Exception:
+            return 0.0
 
     async def _call_google(
         self,
@@ -310,6 +328,7 @@ class UnifiedModelRouter:
         usage = data.get("usageMetadata", {})
         prompt_tokens = usage.get("promptTokenCount", 0)
         completion_tokens = usage.get("candidatesTokenCount", 0)
+        cost_usd = 0.0  # Direct Google Gemini Developer API key is $0 marginal on free tier
 
         return ModelResponse(
             text=text,
@@ -318,6 +337,6 @@ class UnifiedModelRouter:
             tokens_prompt=prompt_tokens,
             tokens_completion=completion_tokens,
             latency_ms=latency_ms,
-            cost_usd=0.0,
+            cost_usd=cost_usd,
         )
 

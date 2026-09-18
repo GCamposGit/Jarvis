@@ -31,7 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
   checkHealth();
   refreshDemands();
   loadMCPTools();
+  refreshTelemetry();
   setInterval(checkHealth, 30000);
+  setInterval(refreshTelemetry, 15000);
 });
 
 function initUI() {
@@ -65,6 +67,10 @@ function initUI() {
   // Tabs
   document.getElementById('tab-btn-darkhub').addEventListener('click', () => switchTab('darkhub'));
   document.getElementById('tab-btn-mcp').addEventListener('click', () => switchTab('mcp'));
+  const btnTelemetry = document.getElementById('tab-btn-telemetry');
+  if (btnTelemetry) {
+    btnTelemetry.addEventListener('click', () => switchTab('telemetry'));
+  }
 
   // Demand Form
   document.getElementById('form-demand').addEventListener('submit', handleDemandSubmit);
@@ -404,11 +410,17 @@ async function sendMessage(overrideText) {
       provider: data.provider_used,
       tools: data.tools_executed,
       latency: data.latency_ms,
+      tokens_prompt: data.tokens_prompt,
+      tokens_completion: data.tokens_completion,
+      cost_usd: data.cost_usd,
     });
 
     // Update history
     chatHistory.push({ role: 'user', content: text });
     chatHistory.push({ role: 'assistant', content: data.response_text });
+
+    // Refresh telemetry immediately after interaction
+    refreshTelemetry();
 
     // Speak concise executive summary in Portuguese (Dual-Channel Output)
     speakResponse(data.response_text);
@@ -433,10 +445,22 @@ function appendMessage(role, text, meta) {
     const toolsExecutedHtml = (meta.tools && meta.tools.length > 0)
       ? meta.tools.map(t => `<span class="px-1.5 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-800 text-[10px] font-mono">⚡ ${t.tool}</span>`).join(' ')
       : '';
+    const totalTokens = (meta.tokens_prompt || 0) + (meta.tokens_completion || 0);
+    const tokensHtml = totalTokens > 0
+      ? `<span title="Prompt: ${meta.tokens_prompt || 0} | Completion: ${meta.tokens_completion || 0}">• 🔤 ${totalTokens} tok</span>`
+      : '';
+    let costText = '';
+    if (meta.cost_usd !== undefined && meta.cost_usd !== null) {
+      costText = meta.cost_usd === 0 ? '$0.00 (Local)' : `$${meta.cost_usd.toFixed(4)}`;
+    }
+    const costHtml = costText ? `<span class="text-emerald-400 font-semibold">• 💰 ${costText}</span>` : '';
+
     metaBadge = `
-      <div class="flex items-center gap-2 mt-2 pt-2 border-t border-slate-800/80 text-[10px] text-slate-500 font-mono">
+      <div class="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-slate-800/80 text-[10px] text-slate-500 font-mono">
         <span>${meta.model}</span>
         ${meta.latency ? `<span>• ${meta.latency}ms</span>` : ''}
+        ${tokensHtml}
+        ${costHtml}
         ${toolsExecutedHtml}
       </div>
     `;
@@ -494,19 +518,33 @@ function quickPrompt(text) {
 function switchTab(tab) {
   const tabDarkhub = document.getElementById('tab-darkhub');
   const tabMcp = document.getElementById('tab-mcp');
+  const tabTelemetry = document.getElementById('tab-telemetry');
   const btnDarkhub = document.getElementById('tab-btn-darkhub');
   const btnMcp = document.getElementById('tab-btn-mcp');
+  const btnTelemetry = document.getElementById('tab-btn-telemetry');
+
+  // Hide all containers
+  tabDarkhub.classList.add('hidden');
+  tabMcp.classList.add('hidden');
+  if (tabTelemetry) tabTelemetry.classList.add('hidden');
+
+  const activeClass = 'flex-1 py-1.5 px-2 rounded-lg bg-slate-800 text-white font-medium border border-slate-700 text-center truncate';
+  const inactiveClass = 'flex-1 py-1.5 px-2 rounded-lg text-slate-400 hover:text-white transition text-center truncate';
+
+  btnDarkhub.className = inactiveClass;
+  btnMcp.className = inactiveClass;
+  if (btnTelemetry) btnTelemetry.className = inactiveClass;
 
   if (tab === 'darkhub') {
     tabDarkhub.classList.remove('hidden');
-    tabMcp.classList.add('hidden');
-    btnDarkhub.className = 'flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700';
-    btnMcp.className = 'flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition';
-  } else {
-    tabDarkhub.classList.add('hidden');
+    btnDarkhub.className = activeClass;
+  } else if (tab === 'mcp') {
     tabMcp.classList.remove('hidden');
-    btnMcp.className = 'flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700';
-    btnDarkhub.className = 'flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition';
+    btnMcp.className = activeClass;
+  } else if (tab === 'telemetry') {
+    if (tabTelemetry) tabTelemetry.classList.remove('hidden');
+    if (btnTelemetry) btnTelemetry.className = activeClass;
+    refreshTelemetry();
   }
 }
 
@@ -787,6 +825,137 @@ function speakResponse(markdownText) {
     console.warn('SpeechSynthesis playback failed:', err);
     isSpeaking = false;
     updateTTSButtonUI();
+  }
+}
+
+async function refreshTelemetry() {
+  try {
+    const [summaryRes, budgetRes] = await Promise.all([
+      fetch('/api/telemetry/summary'),
+      fetch('/api/telemetry/budget'),
+    ]);
+
+    if (!summaryRes.ok || !budgetRes.ok) return;
+
+    const summary = await summaryRes.json();
+    const budgetData = await budgetRes.json();
+    const status = budgetData.status || {};
+    const policy = budgetData.policy || {};
+
+    // 1. Header Badges
+    const budgetDot = document.getElementById('budget-dot');
+    const budgetText = document.getElementById('budget-text');
+    const savingsText = document.getElementById('savings-text');
+
+    if (budgetText) {
+      const dailySpent = status.daily_spend_usd !== undefined ? status.daily_spend_usd.toFixed(2) : '0.00';
+      const dailyLimit = status.daily_limit_usd !== undefined ? status.daily_limit_usd.toFixed(2) : '2.00';
+      budgetText.innerText = `Gasto: $${dailySpent} / $${dailyLimit}`;
+    }
+
+    if (budgetDot) {
+      if (status.status === 'exceeded') {
+        budgetDot.className = 'w-2 h-2 rounded-full bg-red-500 animate-ping';
+      } else if (status.status === 'warning') {
+        budgetDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+      } else {
+        budgetDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+      }
+    }
+
+    if (savingsText) {
+      const savings = summary.total_savings_usd !== undefined ? summary.total_savings_usd.toFixed(2) : '0.00';
+      savingsText.innerText = `Economia: $${savings}`;
+    }
+
+    // 2. Sidebar Card Details
+    const cardStatus = document.getElementById('card-budget-status');
+    const cardBar = document.getElementById('card-budget-bar');
+    const cardDailySpend = document.getElementById('card-daily-spend');
+    const cardDailyLimit = document.getElementById('card-daily-limit');
+
+    if (cardStatus) {
+      cardStatus.innerText = (status.status || 'ok').toUpperCase();
+      if (status.status === 'exceeded') {
+        cardStatus.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-red-950 text-red-400 border border-red-800';
+      } else if (status.status === 'warning') {
+        cardStatus.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-amber-950 text-amber-400 border border-amber-800';
+      } else {
+        cardStatus.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-emerald-950 text-emerald-400 border border-emerald-800';
+      }
+    }
+
+    if (cardBar && status.daily_limit_usd > 0) {
+      const pct = Math.min(100, Math.round((status.daily_spend_usd / status.daily_limit_usd) * 100));
+      cardBar.style.width = `${pct}%`;
+      if (pct >= 100) {
+        cardBar.className = 'bg-red-500 h-2 rounded-full transition-all duration-300';
+      } else if (pct >= 80) {
+        cardBar.className = 'bg-amber-400 h-2 rounded-full transition-all duration-300';
+      } else {
+        cardBar.className = 'bg-emerald-500 h-2 rounded-full transition-all duration-300';
+      }
+    }
+
+    if (cardDailySpend) {
+      cardDailySpend.innerText = `$${(status.daily_spend_usd || 0).toFixed(2)} gasto`;
+    }
+    if (cardDailyLimit) {
+      cardDailyLimit.innerText = `Teto: $${(status.daily_limit_usd || 2).toFixed(2)}`;
+    }
+
+    // 3. Grid Metrics
+    const cardTokens = document.getElementById('card-total-tokens');
+    const cardRatio = document.getElementById('card-tokens-ratio');
+    const cardSavings = document.getElementById('card-total-savings');
+
+    if (cardTokens) {
+      cardTokens.innerText = (summary.total_tokens || 0).toLocaleString();
+    }
+    if (cardRatio) {
+      cardRatio.innerText = `Prompt: ${(summary.total_prompt_tokens || 0).toLocaleString()} | Comp: ${(summary.total_completion_tokens || 0).toLocaleString()}`;
+    }
+    if (cardSavings) {
+      cardSavings.innerText = `$${(summary.total_savings_usd || 0).toFixed(2)}`;
+    }
+
+    // 4. Breakdown by model
+    const modelsContainer = document.getElementById('telemetry-models-breakdown');
+    if (modelsContainer && summary.by_model) {
+      const modelKeys = Object.keys(summary.by_model);
+      if (modelKeys.length === 0) {
+        modelsContainer.innerHTML = '<div class="p-2 rounded-lg bg-surface-850 border border-slate-800 text-[11px] text-slate-400 text-center">Sem dados de consumo ainda.</div>';
+      } else {
+        modelsContainer.innerHTML = modelKeys.map(m => {
+          const stats = summary.by_model[m];
+          const costStr = stats.cost_usd === 0 ? '$0.00' : `$${stats.cost_usd.toFixed(3)}`;
+          return `
+            <div class="p-2 rounded-lg bg-surface-850 border border-slate-800 text-[11px] flex items-center justify-between">
+              <div class="truncate max-w-[150px]">
+                <div class="text-slate-300 font-medium truncate" title="${escapeHtml(m)}">${escapeHtml(m)}</div>
+                <div class="text-[10px] text-slate-500 font-mono">${stats.tokens.toLocaleString()} tok (${stats.calls}x)</div>
+              </div>
+              <div class="text-right font-mono text-emerald-400 font-semibold">${costStr}</div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 5. Circuit Breaker
+    const cardCbStatus = document.getElementById('card-cb-status');
+    const cardCbFallback = document.getElementById('card-cb-fallback');
+    if (cardCbStatus) {
+      cardCbStatus.innerText = policy.circuit_breaker_enabled ? 'Sim' : 'Não';
+      cardCbStatus.className = policy.circuit_breaker_enabled ? 'font-mono text-emerald-400' : 'font-mono text-slate-400';
+    }
+    if (cardCbFallback) {
+      cardCbFallback.innerText = policy.fallback_to_local_on_limit ? 'Ativado' : 'Desativado';
+      cardCbFallback.className = policy.fallback_to_local_on_limit ? 'font-mono text-emerald-400' : 'font-mono text-slate-400';
+    }
+
+  } catch (err) {
+    console.warn('Telemetry refresh failed:', err);
   }
 }
 

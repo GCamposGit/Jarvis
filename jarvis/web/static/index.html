@@ -77,6 +77,17 @@
         <span class="text-slate-300 font-mono text-[11px]" id="ollama-text">Ollama: Verificando...</span>
       </div>
 
+      <!-- Telemetry Live Badges -->
+      <div id="badge-daily-spend" class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 font-mono text-[11px]" title="Consumo diário vs limite orçamentário">
+        <span class="w-2 h-2 rounded-full bg-emerald-400" id="budget-dot"></span>
+        <span class="text-slate-300" id="budget-text">Gasto: $0.00 / $2.00</span>
+      </div>
+
+      <div id="badge-savings" class="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-800/60 font-mono text-[11px] text-emerald-300" title="Economia acumulada vs modelos comerciais ($5/$15 por 1M)">
+        <span>⚡</span>
+        <span id="savings-text">Economia: $0.00</span>
+      </div>
+
       <!-- Language Selector -->
       <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-0.5 text-xs font-mono">
         <button id="lang-btn-pt" type="button" class="px-2 py-1 rounded bg-emerald-600 text-white font-semibold transition" title="Português do Brasil (pt-BR)">
@@ -185,12 +196,15 @@
     <aside class="w-80 bg-surface-900 border-l border-slate-800 flex flex-col overflow-hidden hidden lg:flex">
       
       <!-- Tab Header -->
-      <div class="p-3 border-b border-slate-800 flex gap-2 text-xs">
-        <button id="tab-btn-darkhub" class="flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700">
-          DarkHub Tickets
+      <div class="p-3 border-b border-slate-800 flex gap-1.5 text-xs">
+        <button id="tab-btn-darkhub" class="flex-1 py-1.5 px-2 rounded-lg bg-slate-800 text-white font-medium border border-slate-700 text-center truncate">
+          DarkHub
         </button>
-        <button id="tab-btn-mcp" class="flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition">
-          MCP Tools (<span id="mcp-count">3</span>)
+        <button id="tab-btn-mcp" class="flex-1 py-1.5 px-2 rounded-lg text-slate-400 hover:text-white transition text-center truncate">
+          MCP (<span id="mcp-count">3</span>)
+        </button>
+        <button id="tab-btn-telemetry" class="flex-1 py-1.5 px-2 rounded-lg text-slate-400 hover:text-white transition text-center truncate">
+          Telemetria
         </button>
       </div>
 
@@ -215,6 +229,68 @@
         </div>
         <div id="mcp-tools-list" class="space-y-2 text-xs">
           <!-- Loaded dynamically -->
+        </div>
+      </div>
+
+      <!-- Tab Content: Telemetry & Budget (hidden by default) -->
+      <div id="tab-telemetry" class="flex-1 overflow-y-auto p-3 space-y-3 hidden">
+        <div class="flex items-center justify-between px-1">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Governança de Tokens</span>
+          <button onclick="refreshTelemetry()" class="text-[11px] text-emerald-400 hover:underline">Atualizar</button>
+        </div>
+
+        <!-- Daily Budget Progress Card -->
+        <div class="p-3 rounded-xl bg-surface-850 border border-slate-800 space-y-2 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-300 font-medium">Orçamento Diário</span>
+            <span id="card-budget-status" class="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-emerald-950 text-emerald-400 border border-emerald-800">OK</span>
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+            <div id="card-budget-bar" class="bg-emerald-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+            <span id="card-daily-spend">$0.00 gasto</span>
+            <span id="card-daily-limit">Teto: $2.00</span>
+          </div>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="p-2.5 rounded-xl bg-surface-850 border border-slate-800">
+            <div class="text-[10px] text-slate-400">Total Tokens</div>
+            <div id="card-total-tokens" class="text-sm font-semibold font-mono text-slate-100 mt-0.5">0</div>
+            <div id="card-tokens-ratio" class="text-[9px] text-slate-500 font-mono mt-0.5">Prompt: 0 | Comp: 0</div>
+          </div>
+          <div class="p-2.5 rounded-xl bg-surface-850 border border-slate-800">
+            <div class="text-[10px] text-slate-400">Economia Total</div>
+            <div id="card-total-savings" class="text-sm font-semibold font-mono text-emerald-400 mt-0.5">$0.00</div>
+            <div class="text-[9px] text-emerald-500/80 font-mono mt-0.5">vs $5/$15 1M</div>
+          </div>
+        </div>
+
+        <!-- Breakdown by Model -->
+        <div class="space-y-1.5">
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1">Consumo por Modelo</span>
+          <div id="telemetry-models-breakdown" class="space-y-1 text-xs">
+            <div class="p-2 rounded-lg bg-surface-850 border border-slate-800 text-[11px] text-slate-400 text-center">
+              Sem dados de consumo ainda.
+            </div>
+          </div>
+        </div>
+
+        <!-- Circuit Breaker Config Panel -->
+        <div class="p-3 rounded-xl bg-surface-850 border border-slate-800 space-y-2 text-xs">
+          <div class="font-medium text-slate-200">Circuit Breaker &amp; Teto</div>
+          <div class="space-y-1 text-[11px]">
+            <div class="flex items-center justify-between text-slate-400">
+              <span>Disjuntor Ativo:</span>
+              <span id="card-cb-status" class="font-mono text-emerald-400">Sim</span>
+            </div>
+            <div class="flex items-center justify-between text-slate-400">
+              <span>Fallback Ollama $0:</span>
+              <span id="card-cb-fallback" class="font-mono text-emerald-400">Ativado</span>
+            </div>
+          </div>
         </div>
       </div>
 

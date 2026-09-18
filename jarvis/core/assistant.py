@@ -23,15 +23,22 @@ from jarvis.core.mcp import MCPManager
 from jarvis.core.meeting_relator import MeetingRelatorBridge
 from jarvis.core.memory import EpisodicMemoryEngine
 from jarvis.core.models import ChatMessage, ModelResponse, UnifiedModelRouter
+from jarvis.core.telemetry import (
+    BudgetPolicy,
+    BudgetStatus,
+    TelemetryEngine,
+    TelemetrySummary,
+)
 
 logger = logging.getLogger("jarvis.core.assistant")
 
 SYSTEM_PROMPT = """Você é o Jarvis, um assistente pessoal executivo de alta inteligência, produtividade e engenharia.
-Você opera conectado a quatro grandes ecossistemas:
+Você opera conectado a cinco grandes ecossistemas:
 1. **Segundo Cérebro**: via ferramentas MCP (`search_second_brain`, `read_second_brain_note`, `store_memory_fact`, `recall_memory`), contendo o acervo de documentos, políticas corporativas, contratos, apresentações, procedimentos e notas do usuário.
 2. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e registro de demandas.
 3. **MeetingRelator & Reuniões**: via ferramentas MCP (`list_recent_meetings`, `get_meeting_details`, `search_meetings`, `sync_meetings_to_second_brain`, `dispatch_meeting_demands`, `launch_meeting_recorder`), para consultar transcrições completas de reuniões, atas, decisões tomadas, participantes e despachar itens de ação como demandas para a Dark Factory.
 4. **Agent Harness & Sandbox Determinístico**: via ferramentas MCP (`run_sandboxed_python`, `validate_execution_safety`, `get_harness_audit_log`), para executar cálculos e análises em Python em ambiente seguro com contenção de recursos, verificar segurança de caminhos/comandos e auditar eventos de segurança.
+5. **Telemetria de Tokens & Governança Orçamentária**: via ferramentas MCP (`get_telemetry_summary`, `get_budget_status`, `update_budget_policy`), para consultar o consumo financeiro em tempo real, verificar a economia acumulada ($0 local vs comercial) e controlar tetos de gastos.
 
 Instrução Mandatória sobre Uso de Ferramentas:
 - **Consulta ao Segundo Cérebro**: Sempre que o usuário perguntar sobre documentos, políticas internas, normas, contratos, projetos, procedimentos corporativos ou anotações técnicas, você DEVE OBRIGATORIAMENTE acionar a ferramenta `search_second_brain` para recuperar as evidências reais do acervo antes de formular sua resposta. NUNCA diga que não tem acesso a informações internas ou documentos específicos sem antes acionar a busca no Segundo Cérebro.
@@ -55,6 +62,9 @@ class AssistantTurnResult(BaseModel):
     provider_used: str
     tools_executed: List[Dict[str, Any]] = Field(default_factory=list)
     latency_ms: float = 0.0
+    tokens_prompt: int = 0
+    tokens_completion: int = 0
+    cost_usd: float = 0.0
 
 
 class JarvisAssistant:
@@ -72,6 +82,7 @@ class JarvisAssistant:
         harness_guardrail: Optional[HarnessSafetyGuardrail] = None,
         code_sandbox: Optional[DeterministicCodeSandbox] = None,
         harness_audit: Optional[HarnessAuditLedger] = None,
+        telemetry_engine: Optional[TelemetryEngine] = None,
     ) -> None:
         self.config = config or get_config()
         self.models = model_router or UnifiedModelRouter(self.config)
@@ -96,11 +107,13 @@ class JarvisAssistant:
             memory_engine=self.memory,
             audit_ledger=self.audit,
         )
+        self.telemetry = telemetry_engine or TelemetryEngine(self.config.memory_db_path)
         self._register_darkfac_mcp_tools()
         self._register_memory_mcp_tools()
         self._register_bizops_mcp_tools()
         self._register_meeting_mcp_tools()
         self._register_harness_mcp_tools()
+        self._register_telemetry_mcp_tools()
 
     def _register_darkfac_mcp_tools(self) -> None:
         """Expose Dark Factory actions as MCP tools inside the assistant."""
@@ -586,6 +599,64 @@ class JarvisAssistant:
         events = self.audit.list_events(limit=limit, only_blocked=only_blocked)
         return [e.model_dump() for e in events]
 
+    def _register_telemetry_mcp_tools(self) -> None:
+        """Expose Token Telemetry and Budget Governance tools via MCP."""
+        from jarvis.core.mcp import MCPTool
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="get_telemetry_summary",
+                description="Retorna o resumo financeiro consolidado de tokens gastos, economia gerada vs modelos comerciais e consumo por modelo.",
+                parameters={"type": "object", "properties": {}},
+                server_name="telemetry",
+            ),
+            handler=self._handle_get_telemetry_summary,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="get_budget_status",
+                description="Verifica o status atual do orçamento diário e mensal, gasto acumulado e se o circuit breaker está ativo.",
+                parameters={"type": "object", "properties": {}},
+                server_name="telemetry",
+            ),
+            handler=self._handle_get_budget_status,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="update_budget_policy",
+                description="Atualiza os limites de gastos diário/mensal e configurações de circuit breaker.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "daily_limit_usd": {"type": "number", "description": "Novo limite diário em USD"},
+                        "monthly_limit_usd": {"type": "number", "description": "Novo limite mensal em USD"},
+                        "alert_threshold_pct": {"type": "number", "description": "Percentual para emissão de alertas"},
+                    },
+                },
+                server_name="telemetry",
+            ),
+            handler=self._handle_update_budget_policy,
+        )
+
+    def _handle_get_telemetry_summary(self, args: Dict[str, Any]) -> Any:
+        return self.telemetry.get_summary().model_dump()
+
+    def _handle_get_budget_status(self, args: Dict[str, Any]) -> Any:
+        return self.telemetry.get_budget_status().model_dump()
+
+    def _handle_update_budget_policy(self, args: Dict[str, Any]) -> Any:
+        curr = self.telemetry.get_policy()
+        updated = BudgetPolicy(
+            daily_limit_usd=float(args.get("daily_limit_usd", curr.daily_limit_usd)),
+            monthly_limit_usd=float(args.get("monthly_limit_usd", curr.monthly_limit_usd)),
+            alert_threshold_pct=float(args.get("alert_threshold_pct", curr.alert_threshold_pct)),
+            auto_fallback_to_local=curr.auto_fallback_to_local,
+            enforce_circuit_breaker=curr.enforce_circuit_breaker,
+        )
+        return self.telemetry.update_policy(updated).model_dump()
+
     async def chat(
         self,
         user_message: str,
@@ -629,7 +700,19 @@ class JarvisAssistant:
                 model_used="internal-intent-router",
                 provider_used="builtin",
                 tools_executed=tools_executed,
+                latency_ms=0.0,
+                tokens_prompt=0,
+                tokens_completion=0,
+                cost_usd=0.0,
             )
+
+        # Check budget circuit breaker
+        budget_st = self.telemetry.get_budget_status()
+        if budget_st.circuit_breaker_active:
+            logger.warning("Budget limit active. Enforcing fallback to local model.")
+            if not model or model != self.config.default_local_model:
+                model = self.config.default_local_model
+                provider = "ollama"
 
         # Normal model completion with tool schemas
         tools_schema = self.mcp.get_tools_schema_for_llm()
@@ -641,6 +724,16 @@ class JarvisAssistant:
                 tools=tools_schema if tools_schema else None,
             )
             response_text = resp.text
+
+            # Record turn token telemetry
+            self.telemetry.record_usage(
+                model=resp.model,
+                provider=resp.provider,
+                prompt_tokens=resp.tokens_prompt,
+                completion_tokens=resp.tokens_completion,
+                latency_ms=resp.latency_ms,
+                task_tag="chat",
+            )
 
             # Execute tool calls if returned by model
             if resp.tool_calls:
@@ -725,6 +818,14 @@ class JarvisAssistant:
                             tools=None,
                         )
                         response_text = final_resp.text
+                        self.telemetry.record_usage(
+                            model=final_resp.model,
+                            provider=final_resp.provider,
+                            prompt_tokens=final_resp.tokens_prompt,
+                            completion_tokens=final_resp.tokens_completion,
+                            latency_ms=final_resp.latency_ms,
+                            task_tag="chat_synthesis",
+                        )
                     except Exception as exc:
                         logger.warning("Second-turn synthesis failed: %s", exc)
                         if not response_text:
@@ -744,6 +845,9 @@ class JarvisAssistant:
                 provider_used=resp.provider,
                 tools_executed=tools_executed,
                 latency_ms=resp.latency_ms,
+                tokens_prompt=resp.tokens_prompt,
+                tokens_completion=resp.tokens_completion,
+                cost_usd=resp.cost_usd,
             )
         except Exception as exc:
             logger.error("Chat generation failed: %s", exc)
@@ -752,4 +856,8 @@ class JarvisAssistant:
                 model_used="error",
                 provider_used="none",
                 tools_executed=[],
+                latency_ms=0.0,
+                tokens_prompt=0,
+                tokens_completion=0,
+                cost_usd=0.0,
             )
