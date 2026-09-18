@@ -1,0 +1,20 @@
+[
+  {
+    "pack_id": "pack_20260918_183703_8446e5",
+    "session_id": "session_20260918_183703",
+    "timestamp": "2026-09-18T18:37:03.451971+00:00",
+    "title": "Jarvis Evolution & AI Harness Research",
+    "executive_summary": "This session reinforced 3 state-of-the-art engineering concepts: Pareto Efficiency Frontier Optimization, Deterministic Finite State Machine (FSM) Lifecycle, Headless Decoupling & ...",
+    "concepts_count": 3,
+    "flashcards_count": 6,
+    "concept_names": [
+      "Pareto Efficiency Frontier Optimization",
+      "Deterministic Finite State Machine (FSM) Lifecycle",
+      "Headless Decoupling & Reachability Architecture"
+    ],
+    "file_json": "pack_20260918_183703_8446e5.json",
+    "file_md": "pack_20260918_183703_8446e5.md",
+    "file_html": "pack_20260918_183703_8446e5.html",
+    "file_anki": "pack_20260918_183703_8446e5_anki.tsv"
+  }
+]
