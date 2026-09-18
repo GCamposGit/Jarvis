@@ -10,6 +10,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from jarvis.core.bizops import BizOpsEngine
 from jarvis.core.config import JarvisConfig, get_config
 from jarvis.core.darkfac import DarkFactoryClient
+from jarvis.core.harness import (
+    DeterministicCodeSandbox,
+    ExecutionRiskLevel,
+    HarnessAuditEntry,
+    HarnessAuditLedger,
+    HarnessSafetyGuardrail,
+    PreflightCheckResult,
+    SandboxExecutionResult,
+)
 from jarvis.core.mcp import MCPManager
 from jarvis.core.meeting_relator import MeetingRelatorBridge
 from jarvis.core.memory import EpisodicMemoryEngine
@@ -18,10 +27,11 @@ from jarvis.core.models import ChatMessage, ModelResponse, UnifiedModelRouter
 logger = logging.getLogger("jarvis.core.assistant")
 
 SYSTEM_PROMPT = """Você é o Jarvis, um assistente pessoal executivo de alta inteligência, produtividade e engenharia.
-Você opera conectado a três grandes ecossistemas:
+Você opera conectado a quatro grandes ecossistemas:
 1. **Segundo Cérebro**: via ferramentas MCP (`search_second_brain`, `read_second_brain_note`, `store_memory_fact`, `recall_memory`), contendo o acervo de documentos, políticas corporativas, contratos, apresentações, procedimentos e notas do usuário.
 2. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e registro de demandas.
 3. **MeetingRelator & Reuniões**: via ferramentas MCP (`list_recent_meetings`, `get_meeting_details`, `search_meetings`, `sync_meetings_to_second_brain`, `dispatch_meeting_demands`, `launch_meeting_recorder`), para consultar transcrições completas de reuniões, atas, decisões tomadas, participantes e despachar itens de ação como demandas para a Dark Factory.
+4. **Agent Harness & Sandbox Determinístico**: via ferramentas MCP (`run_sandboxed_python`, `validate_execution_safety`, `get_harness_audit_log`), para executar cálculos e análises em Python em ambiente seguro com contenção de recursos, verificar segurança de caminhos/comandos e auditar eventos de segurança.
 
 Instrução Mandatória sobre Uso de Ferramentas:
 - **Consulta ao Segundo Cérebro**: Sempre que o usuário perguntar sobre documentos, políticas internas, normas, contratos, projetos, procedimentos corporativos ou anotações técnicas, você DEVE OBRIGATORIAMENTE acionar a ferramenta `search_second_brain` para recuperar as evidências reais do acervo antes de formular sua resposta. NUNCA diga que não tem acesso a informações internas ou documentos específicos sem antes acionar a busca no Segundo Cérebro.
@@ -59,6 +69,9 @@ class JarvisAssistant:
         memory_engine: Optional[EpisodicMemoryEngine] = None,
         bizops_engine: Optional[BizOpsEngine] = None,
         meeting_bridge: Optional[MeetingRelatorBridge] = None,
+        harness_guardrail: Optional[HarnessSafetyGuardrail] = None,
+        code_sandbox: Optional[DeterministicCodeSandbox] = None,
+        harness_audit: Optional[HarnessAuditLedger] = None,
     ) -> None:
         self.config = config or get_config()
         self.models = model_router or UnifiedModelRouter(self.config)
@@ -76,10 +89,18 @@ class JarvisAssistant:
             darkfac_client=self.darkfac,
             bizops_engine=self.bizops,
         )
+        self.audit = harness_audit or HarnessAuditLedger(self.config.memory_db_path)
+        self.guardrail = harness_guardrail or HarnessSafetyGuardrail()
+        self.sandbox = code_sandbox or DeterministicCodeSandbox(
+            guardrail=self.guardrail,
+            memory_engine=self.memory,
+            audit_ledger=self.audit,
+        )
         self._register_darkfac_mcp_tools()
         self._register_memory_mcp_tools()
         self._register_bizops_mcp_tools()
         self._register_meeting_mcp_tools()
+        self._register_harness_mcp_tools()
 
     def _register_darkfac_mcp_tools(self) -> None:
         """Expose Dark Factory actions as MCP tools inside the assistant."""
@@ -484,6 +505,87 @@ class JarvisAssistant:
     def _handle_launch_meeting_recorder(self, args: Dict[str, Any]) -> Any:
         return self.meetings.launch_recorder()
 
+    def _register_harness_mcp_tools(self) -> None:
+        """Expose Agent Harness and Sandboxed Execution tools via MCP."""
+        from jarvis.core.mcp import MCPTool
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="run_sandboxed_python",
+                description="Executa código Python de cálculo, análise ou processamento de dados em um sandbox determinístico com timeout e isolamento de recursos.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "code": {"type": "string", "description": "Código Python completo a ser executado"},
+                        "timeout_seconds": {"type": "number", "default": 5.0, "description": "Tempo limite de execução em segundos (padrão 5s)"},
+                    },
+                    "required": ["code"],
+                },
+                server_name="harness",
+            ),
+            handler=self._handle_run_sandboxed_python,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="validate_execution_safety",
+                description="Avalia previamente se um caminho de arquivo, comando ou snippet de código atende às políticas de segurança e raio de impacto do harness.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "target_path": {"type": "string", "description": "Caminho de arquivo para validação (opcional)"},
+                        "is_write": {"type": "boolean", "default": False, "description": "Indica se a intenção é escrever no caminho"},
+                        "code": {"type": "string", "description": "Código Python para validação sintática e de segurança AST (opcional)"},
+                    },
+                },
+                server_name="harness",
+            ),
+            handler=self._handle_validate_execution_safety,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="get_harness_audit_log",
+                description="Recupera o histórico recente de auditoria e verificações de segurança realizadas pelo harness.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "default": 20, "description": "Número máximo de registros a listar"},
+                        "only_blocked": {"type": "boolean", "default": False, "description": "Filtrar apenas tentativas bloqueadas por violação de segurança"},
+                    },
+                },
+                server_name="harness",
+            ),
+            handler=self._handle_get_harness_audit_log,
+        )
+
+    def _handle_run_sandboxed_python(self, args: Dict[str, Any]) -> Any:
+        code = args.get("code", "")
+        timeout = args.get("timeout_seconds")
+        if not code:
+            return {"status": "error", "message": "Código Python é obrigatório."}
+        res = self.sandbox.execute_python(code=code, timeout_seconds=float(timeout) if timeout else None)
+        return res.model_dump()
+
+    def _handle_validate_execution_safety(self, args: Dict[str, Any]) -> Any:
+        target_path = args.get("target_path")
+        code = args.get("code")
+        is_write = bool(args.get("is_write", False))
+
+        if code:
+            res = self.guardrail.validate_python_syntax(code)
+            return res.model_dump()
+        if target_path:
+            res = self.guardrail.validate_path(target_path, is_write=is_write)
+            return res.model_dump()
+        return {"allowed": True, "message": "Nenhum alvo especificado para validação."}
+
+    def _handle_get_harness_audit_log(self, args: Dict[str, Any]) -> Any:
+        limit = int(args.get("limit", 20))
+        only_blocked = bool(args.get("only_blocked", False))
+        events = self.audit.list_events(limit=limit, only_blocked=only_blocked)
+        return [e.model_dump() for e in events]
+
     async def chat(
         self,
         user_message: str,
@@ -553,7 +655,41 @@ class JarvisAssistant:
                         pass
 
                     if fn_name:
+                        # Preflight deterministic safety guardrail check
+                        preflight = self.guardrail.validate_tool_call(fn_name, fn_args)
+                        if not preflight.allowed:
+                            self.audit.record_event(
+                                HarnessAuditEntry(
+                                    action_type=f"mcp_tool_call:{fn_name}",
+                                    target=str(fn_args)[:200],
+                                    risk_level=preflight.risk_level,
+                                    allowed=False,
+                                    reasons=preflight.reasons,
+                                    status="blocked_by_harness",
+                                )
+                            )
+                            tools_executed.append({
+                                "tool": fn_name,
+                                "arguments": fn_args,
+                                "output": {
+                                    "status": "blocked_by_safety_harness",
+                                    "reasons": preflight.reasons,
+                                    "suggested_action": preflight.suggested_action,
+                                },
+                                "is_error": True,
+                            })
+                            continue
+
                         t_res = await self.mcp.execute_tool(fn_name, fn_args)
+                        self.audit.record_event(
+                            HarnessAuditEntry(
+                                action_type=f"mcp_tool_call:{fn_name}",
+                                target=str(fn_args)[:200],
+                                risk_level=preflight.risk_level,
+                                allowed=True,
+                                status="executed" if not t_res.is_error else "error",
+                            )
+                        )
                         tools_executed.append({
                             "tool": fn_name,
                             "arguments": fn_args,

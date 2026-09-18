@@ -1,5 +1,23 @@
 [
   {
+    "pack_id": "pack_20260918_204847_dc723e",
+    "session_id": "session_20260918_204847",
+    "timestamp": "2026-09-18T20:48:47.573358+00:00",
+    "title": "MeetingRelator Production Bridge and Multimodal Ingestion",
+    "executive_summary": "This session reinforced 3 state-of-the-art engineering concepts: Pareto Efficiency Frontier Optimization, Deterministic Finite State Machine (FSM) Lifecycle, Headless Decoupling & ...",
+    "concepts_count": 3,
+    "flashcards_count": 6,
+    "concept_names": [
+      "Pareto Efficiency Frontier Optimization",
+      "Deterministic Finite State Machine (FSM) Lifecycle",
+      "Headless Decoupling & Reachability Architecture"
+    ],
+    "file_json": "pack_20260918_204847_dc723e.json",
+    "file_md": "pack_20260918_204847_dc723e.md",
+    "file_html": "pack_20260918_204847_dc723e.html",
+    "file_anki": "pack_20260918_204847_dc723e_anki.tsv"
+  },
+  {
     "pack_id": "pack_20260918_184529_be14e1",
     "session_id": "session_20260918_184529",
     "timestamp": "2026-09-18T18:45:29.790586+00:00",

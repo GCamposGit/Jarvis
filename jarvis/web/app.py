@@ -73,6 +73,17 @@ class HealthResponse(BaseModel):
     tools_count: int
 
 
+class RunPythonRequest(BaseModel):
+    code: str = Field(..., min_length=1)
+    timeout_seconds: Optional[float] = None
+
+
+class ValidateSafetyRequest(BaseModel):
+    target_path: Optional[str] = None
+    is_write: bool = False
+    code: Optional[str] = None
+
+
 def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     """Factory creating and configuring the Jarvis FastAPI application."""
     cfg = config or get_config()
@@ -112,6 +123,9 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     app.state.memory = assistant.memory
     app.state.bizops = assistant.bizops
     app.state.meetings = assistant.meetings
+    app.state.harness = assistant.guardrail
+    app.state.sandbox = assistant.sandbox
+    app.state.harness_audit = assistant.audit
 
     # Ensure static directory exists
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -306,6 +320,47 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     @app.post("/api/meetings/launch-recorder")
     async def launch_meeting_recorder() -> Dict[str, Any]:
         return app.state.meetings.launch_recorder()
+
+    # Agent Harness & Sandboxed Execution REST Endpoints
+    @app.post("/api/harness/sandbox/python")
+    async def run_sandbox_python(req: RunPythonRequest) -> Dict[str, Any]:
+        res = app.state.sandbox.execute_python(
+            code=req.code,
+            timeout_seconds=req.timeout_seconds,
+        )
+        return res.model_dump()
+
+    @app.post("/api/harness/validate")
+    async def validate_harness_safety(req: ValidateSafetyRequest) -> Dict[str, Any]:
+        if req.code:
+            res = app.state.harness.validate_python_syntax(req.code)
+            return res.model_dump()
+        if req.target_path:
+            res = app.state.harness.validate_path(req.target_path, is_write=req.is_write)
+            return res.model_dump()
+        return {"allowed": True, "reasons": [], "suggested_action": "Nenhum alvo informado."}
+
+    @app.get("/api/harness/audit")
+    async def get_harness_audit(
+        limit: int = 50,
+        only_blocked: bool = False,
+    ) -> List[Dict[str, Any]]:
+        events = app.state.harness_audit.list_events(limit=limit, only_blocked=only_blocked)
+        return [e.model_dump() for e in events]
+
+    @app.get("/api/harness/status")
+    async def get_harness_status() -> Dict[str, Any]:
+        stats = app.state.harness_audit.get_stats()
+        policy = app.state.harness.policy
+        return {
+            "status": "operational",
+            "stats": stats,
+            "policy": {
+                "forbidden_paths": policy.forbidden_paths,
+                "timeout_seconds": policy.timeout_seconds,
+                "max_output_chars": policy.max_output_chars,
+            },
+        }
 
     # Static UI routes
     if STATIC_DIR.exists():
