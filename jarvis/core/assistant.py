@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,16 +34,18 @@ from jarvis.core.telemetry import (
 logger = logging.getLogger("jarvis.core.assistant")
 
 SYSTEM_PROMPT = """Você é o Jarvis, um assistente pessoal executivo de alta inteligência, produtividade e engenharia.
-Você opera conectado a cinco grandes ecossistemas:
-1. **Segundo Cérebro**: via ferramentas MCP (`search_second_brain`, `read_second_brain_note`, `store_memory_fact`, `recall_memory`), contendo o acervo de documentos, políticas corporativas, contratos, apresentações, procedimentos e notas do usuário.
-2. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e registro de demandas.
-3. **MeetingRelator & Reuniões**: via ferramentas MCP (`list_recent_meetings`, `get_meeting_details`, `search_meetings`, `sync_meetings_to_second_brain`, `dispatch_meeting_demands`, `launch_meeting_recorder`), para consultar transcrições completas de reuniões, atas, decisões tomadas, participantes e despachar itens de ação como demandas para a Dark Factory.
-4. **Agent Harness & Sandbox Determinístico**: via ferramentas MCP (`run_sandboxed_python`, `validate_execution_safety`, `get_harness_audit_log`), para executar cálculos e análises em Python em ambiente seguro com contenção de recursos, verificar segurança de caminhos/comandos e auditar eventos de segurança.
-5. **Telemetria de Tokens & Governança Orçamentária**: via ferramentas MCP (`get_telemetry_summary`, `get_budget_status`, `update_budget_policy`), para consultar o consumo financeiro em tempo real, verificar a economia acumulada ($0 local vs comercial) e controlar tetos de gastos.
+Você opera conectado aos seguintes ecossistemas:
+1. **Memória Episódica & Contexto Pessoal**: via ferramentas MCP (`store_memory_fact`, `recall_memory`, `log_decision`, `record_failed_approach`), contendo os fatos declarados pelo usuário, preferências, pessoas conhecidas, regras de negócio informadas e histórico operacional gravados no SQLite local.
+2. **Segundo Cérebro (Acervo Corporativo)**: via ferramentas MCP (`search_second_brain`, `read_second_brain_note`, `save_second_brain_note`), contendo o acervo documental formal da empresa (políticas PO/PR/PL, contratos, propostas, relatórios e arquivos estáticos).
+3. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e registro de demandas.
+4. **MeetingRelator & Reuniões**: via ferramentas MCP (`list_recent_meetings`, `get_meeting_details`, `search_meetings`, `sync_meetings_to_second_brain`, `dispatch_meeting_demands`, `launch_meeting_recorder`), para consultar transcrições completas de reuniões, atas, decisões tomadas, participantes e despachar itens de ação como demandas para a Dark Factory.
+5. **Agent Harness & Sandbox Determinístico**: via ferramentas MCP (`run_sandboxed_python`, `validate_execution_safety`, `get_harness_audit_log`), para executar cálculos e análises em Python em ambiente seguro com contenção de recursos, verificar segurança de caminhos/comandos e auditar eventos de segurança.
+6. **Telemetria de Tokens & Governança Orçamentária**: via ferramentas MCP (`get_telemetry_summary`, `get_budget_status`, `update_budget_policy`), para consultar o consumo financeiro em tempo real, verificar a economia acumulada ($0 local vs comercial) e controlar tetos de gastos.
 
-Instrução Mandatória sobre Uso de Ferramentas:
-- **Consulta ao Segundo Cérebro**: Sempre que o usuário perguntar sobre documentos, políticas internas, normas, contratos, projetos, procedimentos corporativos ou anotações técnicas, você DEVE OBRIGATORIAMENTE acionar a ferramenta `search_second_brain` para recuperar as evidências reais do acervo antes de formular sua resposta. NUNCA diga que não tem acesso a informações internas ou documentos específicos sem antes acionar a busca no Segundo Cérebro.
-- Com base nos trechos reais recuperados, responda com precisão, citando os códigos de documentos (ex: PO-CORP-007), nomes de arquivos e seções correspondentes.
+Instruções Mandatórias sobre Memória e Uso de Ferramentas:
+- **Armazenamento de Fatos na Memória Episódica (`store_memory_fact`)**: Sempre que o usuário disser "guarde", "lembre-se", "armazene", "registre o fato" ou declarar dados importantes sobre sua vida, preferências, família, ou operações de negócios, você DEVE acionar a ferramenta `store_memory_fact` para persistir o fato.
+- **Consulta à Memória Episódica (`recall_memory`)**: Sempre que o usuário perguntar sobre o que ele já te disse, sua memória ("sua memória", "o que você sabe sobre mim"), pessoas conhecidas, família, preferências pessoais ou métricas operacionais ditadas diretamente por ele, consulte a Memória Episódica (ou o bloco `[MEMÓRIA EPISÓDICA E CONTEXTO DO SEGUNDO CÉREBRO]` já injetado neste prompt). NUNCA faça busca no acervo corporativo (`search_second_brain`) para dados pessoais ou fatos operacionais declarados pelo usuário na conversa.
+- **Consulta ao Segundo Cérebro Corporativo (`search_second_brain`)**: Apenas acione `search_second_brain` quando o usuário perguntar expressamente sobre documentos, políticas internas formais (ex: PO, PR, PL), normas corporativas, contratos, apresentações institucionais ou notas técnicas do acervo da empresa. Com base nos trechos reais recuperados, cite códigos de documentos (ex: PO-CORP-007) e seções.
 
 Diretrizes de Comunicação e Resposta (Dual-Channel Output):
 - **Resumo Falado Inicial**: Inicie sempre sua resposta com 1 ou 2 frases executivas, diretas e afirmativas. Esse primeiro trecho será sintetizado em voz para o operador.
@@ -188,7 +191,7 @@ class JarvisAssistant:
         self.mcp.register_builtin_tool(
             MCPTool(
                 name="store_memory_fact",
-                description="Armazena ou atualiza um fato, preferência do usuário, regra de negócio ou contexto no Segundo Cérebro.",
+                description="Armazena ou atualiza um fato, preferência do usuário, pessoa da família, regra de negócio ou contexto operacional na Memória Episódica persistente.",
                 parameters={
                     "type": "object",
                     "properties": {
@@ -207,7 +210,7 @@ class JarvisAssistant:
         self.mcp.register_builtin_tool(
             MCPTool(
                 name="recall_memory",
-                description="Busca fatos, preferências e anotações gravadas no Segundo Cérebro.",
+                description="Busca fatos, preferências, regras operacionais e pessoas gravadas na Memória Episódica do assistente. Use sempre que o usuário perguntar sobre sua memória, o que já foi dito, pessoas conhecidas ou regras customizadas.",
                 parameters={
                     "type": "object",
                     "properties": {
@@ -657,6 +660,81 @@ class JarvisAssistant:
         )
         return self.telemetry.update_policy(updated).model_dump()
 
+    def _extract_and_persist_facts(self, user_message: str) -> List[Dict[str, Any]]:
+        """Deterministically extract and store facts if message starts with explicit memory directives."""
+        clean = user_message.strip()
+        pattern = re.compile(
+            r"^(?:jarvis[,\s]+)?(?:guarde(?:\s+na\s+sua\s+memória|\s+na\s+memória)?|armazene|registre|salve(?:\s+na\s+sua\s+memória|\s+na\s+memória)?|lembre-?se)\s+(?:o\s+fato\s+(?:de\s+que|que)?\s*|de\s+que\s*|que\s*|:\s*)?(?P<body>.+)",
+            re.IGNORECASE | re.DOTALL,
+        )
+        match = pattern.match(clean)
+        if not match:
+            return []
+
+        body = match.group("body").strip()
+        # Check if body contains a trailing question or secondary clause
+        split_match = re.split(
+            r"(?:\.{2,}|\n+|\?+|(?:[\.!?]\s+))(?=(?:qual|quem|como|onde|quando|quanto|quantos|quanta|quantas|o\s+que|por\s+que|será)\b|\?)",
+            body,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )
+        if len(split_match) > 1:
+            fact_part = split_match[0].strip()
+            question_part = split_match[1].strip()
+        else:
+            parts = re.split(r"(?<=[.!?])\s+", body, maxsplit=1)
+            if len(parts) > 1 and any(q_word in parts[1].lower() for q_word in ["qual", "quem", "como", "onde", "quando", "quanto", "?"]):
+                fact_part = parts[0].strip()
+                question_part = parts[1].strip()
+            else:
+                fact_part = body
+                question_part = ""
+
+        fact_part = fact_part.strip(" .,;:-")
+        if not fact_part or len(fact_part) < 4:
+            return []
+
+        words = re.findall(r"[a-zA-Z0-9áéíóúâêîôûãõçÁÉÍÓÚÂÊÎÔÛÃÕÇ]+", fact_part.lower())
+        ignore_words = {
+            "a", "o", "as", "os", "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas",
+            "e", "é", "que", "quem", "minha", "meu", "sua", "seu", "um", "uma", "uns", "umas", "para", "com",
+            "pelo", "pela", "pelos", "pelas"
+        }
+        key_words = [w for w in words if w not in ignore_words and len(w) >= 3][:4]
+        fact_key = "_".join(key_words) if key_words else "fato_usuario"
+
+        category = "general"
+        lower_fact = fact_part.lower()
+        if any(term in lower_fact for term in ["faturamento", "receita", "lucro", "custo", "venda", "empresa", "operação", "operacao", "negócio", "negocio"]):
+            category = "business_rule"
+        elif any(term in lower_fact for term in ["esposa", "marido", "filho", "filha", "gosto", "prefiro", "nome", "aniversário"]):
+            category = "user_preference"
+
+        stored_fact = self.memory.store_fact(
+            key=fact_key,
+            value=fact_part,
+            category=category,
+            tags=key_words,
+        )
+
+        return [{
+            "tool": "store_memory_fact",
+            "arguments": {
+                "key": stored_fact.key,
+                "value": stored_fact.value,
+                "category": stored_fact.category,
+                "tags": stored_fact.tags,
+            },
+            "output": {
+                "status": "stored",
+                "key": stored_fact.key,
+                "category": stored_fact.category,
+            },
+            "is_error": False,
+            "question_part": question_part,
+        }]
+
     async def chat(
         self,
         user_message: str,
@@ -665,23 +743,88 @@ class JarvisAssistant:
         provider: Optional[str] = None,
     ) -> AssistantTurnResult:
         """Process a conversation turn with tools support."""
-        # Inject memory brief if available
-        memory_brief = self.memory.build_context_brief(user_message)
-        system_content = SYSTEM_PROMPT
-        if memory_brief:
-            system_content = f"{SYSTEM_PROMPT}\n\n{memory_brief}"
-
-        messages: List[ChatMessage] = [
-            ChatMessage(role="system", content=system_content)
-        ]
-        if history:
-            messages.extend(history)
-        messages.append(ChatMessage(role="user", content=user_message))
-
-        # Check for direct intent shortcuts (e.g. demand creation or status check)
-        lowered = user_message.lower()
         tools_executed: List[Dict[str, Any]] = []
 
+        # 1. Proactive deterministic memory storage extraction
+        extracted_facts = self._extract_and_persist_facts(user_message)
+        question_followup = ""
+        if extracted_facts:
+            for ef in extracted_facts:
+                tools_executed.append({
+                    "tool": ef["tool"],
+                    "arguments": ef["arguments"],
+                    "output": ef["output"],
+                    "is_error": False,
+                })
+                question_followup = ef.get("question_part", "")
+
+            # If message is purely storage instruction without subsequent question, return direct confirmation
+            if not question_followup:
+                first_fact = extracted_facts[0]
+                stored_key = first_fact["output"]["key"]
+                stored_val = first_fact["arguments"]["value"]
+                stored_cat = first_fact["output"]["category"]
+                response_text = (
+                    f"Fato registrado com sucesso na sua memória episódica persistente.\n\n"
+                    f"- **Chave**: `{stored_key}`\n"
+                    f"- **Categoria**: `{stored_cat}`\n"
+                    f"- **Conteúdo**: \"{stored_val}\"\n\n"
+                    f"Esta informação já está consolidada no seu perfil e pronta para recuperação instantânea."
+                )
+                return AssistantTurnResult(
+                    response_text=response_text,
+                    model_used="internal-memory-router",
+                    provider_used="builtin",
+                    tools_executed=tools_executed,
+                    latency_ms=0.0,
+                    tokens_prompt=0,
+                    tokens_completion=0,
+                    cost_usd=0.0,
+                )
+
+        # 2. Check for episodic memory resolution shortcuts (e.g. "sua memória")
+        lowered_stripped = user_message.strip().lower()
+        if lowered_stripped in [
+            "sua memória", "sua memoria", "na sua memória", "na sua memoria",
+            "da sua memória", "da sua memoria", "consulte sua memória", "consulte sua memoria",
+            "olhe sua memória", "olhe na sua memória", "o que você tem na memória", "o que tem na sua memória"
+        ]:
+            ref_topic = ""
+            if history:
+                for msg in reversed(history):
+                    if msg.role == "user" and msg.content.strip().lower() not in [
+                        "sua memória", "sua memoria", "na sua memória", "na sua memoria"
+                    ]:
+                        ref_topic = msg.content
+                        break
+
+            recalled = self.memory.recall_facts(query=ref_topic if ref_topic else None, limit=5)
+            if recalled:
+                tools_executed.append({
+                    "tool": "recall_memory",
+                    "arguments": {"query": ref_topic, "limit": 5},
+                    "output": [f.model_dump() for f in recalled],
+                    "is_error": False,
+                })
+                bullet_lines = "\n".join([f"- **{f.key}** ({f.category}): {f.value}" for f in recalled])
+                response_text = (
+                    f"Consultando diretamente a sua memória episódica, recuperei as seguintes informações registradas:\n\n"
+                    f"{bullet_lines}\n\n"
+                    f"Estas informações estão consolidadas na sua base pessoal de conhecimento."
+                )
+                return AssistantTurnResult(
+                    response_text=response_text,
+                    model_used="internal-memory-router",
+                    provider_used="builtin",
+                    tools_executed=tools_executed,
+                    latency_ms=0.0,
+                    tokens_prompt=0,
+                    tokens_completion=0,
+                    cost_usd=0.0,
+                )
+
+        # 3. Check for Dark Factory status shortcut
+        lowered = user_message.lower()
         if "status da dark factory" in lowered or "status do darkhub" in lowered:
             status_res = await self.darkfac.get_status()
             executed = {"tool": "check_dark_factory_status", "result": status_res.model_dump()}
@@ -705,6 +848,20 @@ class JarvisAssistant:
                 tokens_completion=0,
                 cost_usd=0.0,
             )
+
+        # 4. Inject memory brief (includes any newly saved fact from step 1)
+        query_topic = question_followup if question_followup else user_message
+        memory_brief = self.memory.build_context_brief(query_topic)
+        system_content = SYSTEM_PROMPT
+        if memory_brief:
+            system_content = f"{SYSTEM_PROMPT}\n\n{memory_brief}"
+
+        messages: List[ChatMessage] = [
+            ChatMessage(role="system", content=system_content)
+        ]
+        if history:
+            messages.extend(history)
+        messages.append(ChatMessage(role="user", content=user_message))
 
         # Check budget circuit breaker
         budget_st = self.telemetry.get_budget_status()
@@ -797,18 +954,30 @@ class JarvisAssistant:
                             f"=== Resultado da ferramenta '{t['tool']}' ===\n"
                             f"{json.dumps(t['output'], ensure_ascii=False, indent=2)}"
                         )
-                    messages.append(ChatMessage(
-                        role="assistant",
-                        content=resp.text or "Consultando o acervo do Segundo Cérebro...",
-                    ))
-                    messages.append(ChatMessage(
-                        role="user",
-                        content=(
+                    tool_names = [t.get("tool", "") for t in tools_executed]
+                    is_memory_tool = any(tn in ["store_memory_fact", "recall_memory", "log_decision"] for tn in tool_names)
+                    assistant_msg = "Acessando a memória episódica persistente..." if is_memory_tool else "Consultando o acervo do Segundo Cérebro..."
+                    if is_memory_tool:
+                        user_directive = (
+                            f"[Evidências e registros da Memória Episódica]:\n"
+                            f"{chr(10).join(tool_context_blocks)}\n\n"
+                            f"Com base nos dados da memória episódica acima, responda à solicitação do usuário com clareza, "
+                            f"fornecendo a informação solicitada ou confirmando o armazenamento com precisão."
+                        )
+                    else:
+                        user_directive = (
                             f"[Evidências e trechos reais retornados pelas ferramentas]:\n"
                             f"{chr(10).join(tool_context_blocks)}\n\n"
                             f"Com base exclusiva nos dados acima, responda à pergunta do usuário com precisão, "
                             f"citando as fontes, nomes de arquivos e seções encontradas."
-                        ),
+                        )
+                    messages.append(ChatMessage(
+                        role="assistant",
+                        content=resp.text or assistant_msg,
+                    ))
+                    messages.append(ChatMessage(
+                        role="user",
+                        content=user_directive,
                     ))
                     try:
                         final_resp = await self.models.generate(

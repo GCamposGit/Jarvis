@@ -212,39 +212,111 @@ class EpisodicMemoryEngine:
         category: Optional[str] = None,
         limit: int = 10,
     ) -> List[MemoryFact]:
-        """Recall facts matching optional search query and category."""
-        sql = "SELECT * FROM memory_facts WHERE 1=1"
-        params: List[Any] = []
+        """Recall facts matching optional search query and category with tokenized ranking."""
+        clean_query = query.strip() if query else None
 
+        def _row_to_fact(row: sqlite3.Row) -> MemoryFact:
+            return MemoryFact(
+                key=row["key"],
+                value=row["value"],
+                category=row["category"],
+                tags=json.loads(row["tags"]),
+                confidence=float(row["confidence"]),
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+
+        if not clean_query:
+            sql = "SELECT * FROM memory_facts WHERE 1=1"
+            params: List[Any] = []
+            if category:
+                sql += " AND category = ?"
+                params.append(category)
+            sql += " ORDER BY updated_at DESC LIMIT ?"
+            params.append(limit)
+
+            facts = []
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, tuple(params))
+                for row in cursor.fetchall():
+                    facts.append(_row_to_fact(row))
+            return facts
+
+        # Attempt 1: Exact substring match
+        exact_sql = "SELECT * FROM memory_facts WHERE 1=1"
+        exact_params: List[Any] = []
         if category:
-            sql += " AND category = ?"
-            params.append(category)
+            exact_sql += " AND category = ?"
+            exact_params.append(category)
+        exact_sql += " AND (key LIKE ? OR value LIKE ? OR tags LIKE ?)"
+        wildcard = f"%{clean_query.lower()}%"
+        exact_params.extend([wildcard, wildcard, wildcard])
+        exact_sql += " ORDER BY updated_at DESC LIMIT ?"
+        exact_params.append(limit)
 
-        if query:
-            sql += " AND (key LIKE ? OR value LIKE ? OR tags LIKE ?)"
-            wildcard = f"%{query.strip().lower()}%"
-            params.extend([wildcard, wildcard, wildcard])
-
-        sql += " ORDER BY updated_at DESC LIMIT ?"
-        params.append(limit)
-
-        facts = []
+        facts_by_key: Dict[str, MemoryFact] = {}
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(sql, tuple(params))
+            cursor.execute(exact_sql, tuple(exact_params))
             for row in cursor.fetchall():
-                facts.append(
-                    MemoryFact(
-                        key=row["key"],
-                        value=row["value"],
-                        category=row["category"],
-                        tags=json.loads(row["tags"]),
-                        confidence=float(row["confidence"]),
-                        created_at=row["created_at"],
-                        updated_at=row["updated_at"],
-                    )
-                )
-        return facts
+                f = _row_to_fact(row)
+                facts_by_key[f.key] = f
+
+        if len(facts_by_key) >= limit:
+            return list(facts_by_key.values())[:limit]
+
+        # Attempt 2: Tokenized keyword search
+        import re
+        stopwords = {
+            "qual", "quem", "como", "onde", "quando", "quanto", "quantos", "quanta", "quantas",
+            "porque", "por", "que", "para", "com", "sem", "sob", "sobre", "entre", "ate", "até",
+            "este", "esta", "estes", "estas", "esse", "essa", "esses", "essas", "aquele", "aquela",
+            "isso", "isto", "aquilo", "meu", "minha", "meus", "minhas", "seu", "sua", "seus", "suas",
+            "dele", "dela", "deles", "delas", "nosso", "nossa", "nossos", "nossas", "voce", "você",
+            "ele", "ela", "eles", "elas", "nos", "nós", "de", "da", "do", "das", "dos",
+            "em", "no", "na", "nos", "nas", "pelo", "pela", "pelos", "pelas", "um", "uma", "uns", "umas",
+            "o", "a", "os", "as", "e", "é", "ou", "se", "fato", "guarde", "lembre", "lembre-se", "armazene",
+            "salve", "registre", "jarvis", "saber", "favor", "por favor"
+        }
+        words = re.findall(r"[a-zA-Z0-9áéíóúâêîôûãõçÁÉÍÓÚÂÊÎÔÛÃÕÇ]+", clean_query.lower())
+        tokens = [w for w in words if len(w) >= 3 and w not in stopwords]
+
+        if tokens:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                all_sql = "SELECT * FROM memory_facts WHERE 1=1"
+                all_params: List[Any] = []
+                if category:
+                    all_sql += " AND category = ?"
+                    all_params.append(category)
+                cursor.execute(all_sql, tuple(all_params))
+                scored_facts = []
+                for row in cursor.fetchall():
+                    f = _row_to_fact(row)
+                    if f.key in facts_by_key:
+                        continue
+                    key_text = f.key.lower()
+                    val_text = f.value.lower()
+                    tags_text = " ".join(t.lower() for t in f.tags)
+                    score = 0
+                    for t in tokens:
+                        if t in key_text:
+                            score += 4
+                        if t in val_text:
+                            score += 2
+                        if t in tags_text:
+                            score += 3
+                    if score > 0:
+                        scored_facts.append((score, f))
+
+                scored_facts.sort(key=lambda x: (x[0], x[1].updated_at), reverse=True)
+                for _, f in scored_facts:
+                    facts_by_key[f.key] = f
+                    if len(facts_by_key) >= limit:
+                        break
+
+        return list(facts_by_key.values())[:limit]
 
     def delete_fact(self, key: str) -> bool:
         """Delete a fact from persistent memory."""
@@ -428,7 +500,15 @@ class EpisodicMemoryEngine:
     # --- Proactive Context Brief Generator ---
     def build_context_brief(self, current_topic: Optional[str] = None, max_items: int = 6) -> str:
         """Generate a concise markdown memory brief to inject into LLM system prompts."""
-        facts = self.recall_facts(query=current_topic, limit=max_items)
+        facts = self.recall_facts(query=current_topic, limit=max_items) if current_topic else []
+        if len(facts) < 3:
+            recent_facts = self.recall_facts(limit=3)
+            seen_keys = {f.key for f in facts}
+            for rf in recent_facts:
+                if rf.key not in seen_keys and len(facts) < max_items:
+                    facts.append(rf)
+                    seen_keys.add(rf.key)
+
         failures = self.query_failed_attempts(action_query=current_topic, limit=3)
         if not failures:
             failures = self.query_failed_attempts(limit=2)

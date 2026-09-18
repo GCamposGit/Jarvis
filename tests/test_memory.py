@@ -191,3 +191,24 @@ async def test_web_memory_endpoints(tmp_path: Path):
         resp = await client.delete("/api/memory/facts/framework_preferido")
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
+
+
+def test_memory_tokenized_recall_with_long_query(tmp_path: Path):
+    db_path = tmp_path / "test_memory.db"
+    engine = EpisodicMemoryEngine(db_path=db_path)
+
+    engine.store_fact(
+        key="faturamento_mansao_lago",
+        value="A expectativa de faturamento mensal da mansão do lago é de R$10.000 e quem toca a operação é a Cintia, minha esposa.",
+        category="business_rule",
+        tags=["faturamento", "mansão", "lago", "cintia"],
+    )
+
+    # Long natural language query that previously failed with substring LIKE
+    query = "Qual a expectativa de receita mensal da mansão do Lago e quem toca a operação?"
+    recalled = engine.recall_facts(query=query)
+    assert len(recalled) == 1
+    assert recalled[0].key == "faturamento_mansao_lago"
+    assert "R$10.000" in recalled[0].value
+    assert "Cintia" in recalled[0].value
+

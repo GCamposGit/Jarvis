@@ -52,11 +52,11 @@ class MCPManager:
         self.register_builtin_tool(
             MCPTool(
                 name="search_second_brain",
-                description="Pesquisa documentos corporativos, políticas internas (PO, PR, PL), contratos, apresentações, normas e notas no acervo do Segundo Cérebro. Use sempre que o usuário perguntar sobre políticas, contratos ou conhecimento interno.",
+                description="Pesquisa documentos corporativos, políticas internas (PO, PR, PL), contratos, apresentações, normas e notas técnicas no acervo de arquivos do Segundo Cérebro. Use apenas para documentos da empresa. NÃO USE para fatos pessoais, preferências do usuário, pessoas da família ou informações de memória recente.",
                 parameters={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Termo de busca, tópico ou nome de documento (ex: 'política de IA', 'contrato')"},
+                        "query": {"type": "string", "description": "Termo de busca, tópico ou nome de documento corporativo (ex: 'política de IA', 'contrato')"},
                         "limit": {"type": "integer", "default": 5},
                     },
                     "required": ["query"],
