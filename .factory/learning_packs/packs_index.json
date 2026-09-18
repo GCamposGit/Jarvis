@@ -1,5 +1,23 @@
 [
   {
+    "pack_id": "pack_20260918_184529_be14e1",
+    "session_id": "session_20260918_184529",
+    "timestamp": "2026-09-18T18:45:29.790586+00:00",
+    "title": "Episodic Memory & Autonomous BizOps Engine",
+    "executive_summary": "This session reinforced 3 state-of-the-art engineering concepts: Pareto Efficiency Frontier Optimization, Deterministic Finite State Machine (FSM) Lifecycle, Headless Decoupling & ...",
+    "concepts_count": 3,
+    "flashcards_count": 6,
+    "concept_names": [
+      "Pareto Efficiency Frontier Optimization",
+      "Deterministic Finite State Machine (FSM) Lifecycle",
+      "Headless Decoupling & Reachability Architecture"
+    ],
+    "file_json": "pack_20260918_184529_be14e1.json",
+    "file_md": "pack_20260918_184529_be14e1.md",
+    "file_html": "pack_20260918_184529_be14e1.html",
+    "file_anki": "pack_20260918_184529_be14e1_anki.tsv"
+  },
+  {
     "pack_id": "pack_20260918_183703_8446e5",
     "session_id": "session_20260918_183703",
     "timestamp": "2026-09-18T18:37:03.451971+00:00",
