@@ -38,7 +38,7 @@ class BizOpsEngine:
         self.config = config or get_config()
         if db_path is None or str(db_path) == ":memory:":
             self.db_path = ":memory:"
-            self._mem_conn = sqlite3.connect(":memory:")
+            self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
             self._mem_conn.row_factory = sqlite3.Row
         else:
             self.db_path = str(Path(db_path).resolve())
@@ -55,7 +55,7 @@ class BizOpsEngine:
     def _get_connection(self) -> sqlite3.Connection:
         if self._mem_conn is not None:
             return self._mem_conn
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -123,6 +123,14 @@ class BizOpsEngine:
                 description="Realiza sondagem de disponibilidade do Ollama, DarkHub e subsistemas.",
                 task_type="health_pulse",
                 schedule_interval_sec=3600,
+                autonomy_level=AutonomyLevel.LEVEL_1_READ_ONLY,
+            ),
+            BizTask(
+                id="task_meeting_sync",
+                title="Meeting Relator Second Brain Sync",
+                description="Sincroniza reuniões gravadas e transcritas pelo MeetingRelator no Segundo Cérebro (fatos e decisões).",
+                task_type="meeting_sync",
+                schedule_interval_sec=7200,
                 autonomy_level=AutonomyLevel.LEVEL_1_READ_ONLY,
             ),
         ]
@@ -231,6 +239,8 @@ class BizOpsEngine:
                 res = await self._run_backlog_hygiene(task)
             elif task.task_type == "health_pulse":
                 res = await self._run_health_pulse(task)
+            elif task.task_type == "meeting_sync":
+                res = await self._run_meeting_sync(task)
             else:
                 res = BizOpsRunResult(
                     task_id=task_id,
@@ -324,6 +334,24 @@ class BizOpsEngine:
             success=True,
             message=f"Health pulse registrado. DarkHub online: {hub.online}.",
             data={"hub_online": hub.online},
+        )
+
+    async def _run_meeting_sync(self, task: BizTask) -> BizOpsRunResult:
+        """Synchronize new MeetingRelator meetings into Second Brain."""
+        from jarvis.core.meeting_relator import MeetingRelatorBridge
+
+        bridge = MeetingRelatorBridge(
+            config=self.config,
+            memory_engine=self.memory,
+            darkfac_client=self.darkfac,
+            bizops_engine=self,
+        )
+        sync_res = bridge.sync_to_second_brain(limit=10)
+        return BizOpsRunResult(
+            task_id=task.id,
+            success=True,
+            message=sync_res.message,
+            data=sync_res.model_dump(),
         )
 
     def _update_task_status(

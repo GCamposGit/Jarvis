@@ -76,7 +76,7 @@ class EpisodicMemoryEngine:
     def __init__(self, db_path: Path | str | None = None) -> None:
         if db_path is None or str(db_path) == ":memory:":
             self.db_path = ":memory:"
-            self._mem_conn = sqlite3.connect(":memory:")
+            self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
             self._mem_conn.row_factory = sqlite3.Row
         else:
             self.db_path = str(Path(db_path).resolve())
@@ -88,7 +88,7 @@ class EpisodicMemoryEngine:
     def _get_connection(self) -> sqlite3.Connection:
         if self._mem_conn is not None:
             return self._mem_conn
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
 

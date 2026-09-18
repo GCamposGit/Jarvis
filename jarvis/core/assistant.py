@@ -11,15 +11,17 @@ from jarvis.core.bizops import BizOpsEngine
 from jarvis.core.config import JarvisConfig, get_config
 from jarvis.core.darkfac import DarkFactoryClient
 from jarvis.core.mcp import MCPManager
+from jarvis.core.meeting_relator import MeetingRelatorBridge
 from jarvis.core.memory import EpisodicMemoryEngine
 from jarvis.core.models import ChatMessage, ModelResponse, UnifiedModelRouter
 
 logger = logging.getLogger("jarvis.core.assistant")
 
 SYSTEM_PROMPT = """Você é o Jarvis, um assistente pessoal executivo de alta inteligência, produtividade e engenharia.
-Você opera conectado a dois grandes ecossistemas:
-1. **Segundo Cérebro**: via ferramentas MCP (`search_second_brain`, `read_second_brain_note`), contendo o acervo de documentos, políticas corporativas, contratos, apresentações, procedimentos e notas do usuário.
+Você opera conectado a três grandes ecossistemas:
+1. **Segundo Cérebro**: via ferramentas MCP (`search_second_brain`, `read_second_brain_note`, `store_memory_fact`, `recall_memory`), contendo o acervo de documentos, políticas corporativas, contratos, apresentações, procedimentos e notas do usuário.
 2. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e registro de demandas.
+3. **MeetingRelator & Reuniões**: via ferramentas MCP (`list_recent_meetings`, `get_meeting_details`, `search_meetings`, `sync_meetings_to_second_brain`, `dispatch_meeting_demands`, `launch_meeting_recorder`), para consultar transcrições completas de reuniões, atas, decisões tomadas, participantes e despachar itens de ação como demandas para a Dark Factory.
 
 Instrução Mandatória sobre Uso de Ferramentas:
 - **Consulta ao Segundo Cérebro**: Sempre que o usuário perguntar sobre documentos, políticas internas, normas, contratos, projetos, procedimentos corporativos ou anotações técnicas, você DEVE OBRIGATORIAMENTE acionar a ferramenta `search_second_brain` para recuperar as evidências reais do acervo antes de formular sua resposta. NUNCA diga que não tem acesso a informações internas ou documentos específicos sem antes acionar a busca no Segundo Cérebro.
@@ -56,6 +58,7 @@ class JarvisAssistant:
         mcp_manager: Optional[MCPManager] = None,
         memory_engine: Optional[EpisodicMemoryEngine] = None,
         bizops_engine: Optional[BizOpsEngine] = None,
+        meeting_bridge: Optional[MeetingRelatorBridge] = None,
     ) -> None:
         self.config = config or get_config()
         self.models = model_router or UnifiedModelRouter(self.config)
@@ -67,9 +70,16 @@ class JarvisAssistant:
             memory_engine=self.memory,
             darkfac_client=self.darkfac,
         )
+        self.meetings = meeting_bridge or MeetingRelatorBridge(
+            config=self.config,
+            memory_engine=self.memory,
+            darkfac_client=self.darkfac,
+            bizops_engine=self.bizops,
+        )
         self._register_darkfac_mcp_tools()
         self._register_memory_mcp_tools()
         self._register_bizops_mcp_tools()
+        self._register_meeting_mcp_tools()
 
     def _register_darkfac_mcp_tools(self) -> None:
         """Expose Dark Factory actions as MCP tools inside the assistant."""
@@ -343,6 +353,136 @@ class JarvisAssistant:
             return loop.run_until_complete(self.bizops.approve_action(action_id, operator=op)).model_dump()
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
+
+    def _register_meeting_mcp_tools(self) -> None:
+        """Expose MeetingRelator multimodal ingestion actions as MCP tools."""
+        from jarvis.core.mcp import MCPTool
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="list_recent_meetings",
+                description="Lista metadados das reuniões mais recentes gravadas e transcritas pelo MeetingRelator.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "default": 10, "description": "Número máximo de reuniões a listar"},
+                    },
+                },
+                server_name="meeting_relator",
+            ),
+            handler=self._handle_list_recent_meetings,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="get_meeting_details",
+                description="Obtém a ata detalhada, transcrição completa, participantes, decisões e itens de ação de uma reunião específica.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "meeting_id": {"type": "integer", "description": "ID numérico da reunião no banco de dados"},
+                    },
+                    "required": ["meeting_id"],
+                },
+                server_name="meeting_relator",
+            ),
+            handler=self._handle_get_meeting_details,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="search_meetings",
+                description="Pesquisa no histórico de reuniões por palavras-chave em transcrições, títulos ou resumos executivos.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Termo ou frase a pesquisar"},
+                        "limit": {"type": "integer", "default": 10},
+                    },
+                    "required": ["query"],
+                },
+                server_name="meeting_relator",
+            ),
+            handler=self._handle_search_meetings,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="sync_meetings_to_second_brain",
+                description="Sincroniza reuniões do MeetingRelator com o Segundo Cérebro (armazenando fatos, decisões e episódios).",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "default": 10, "description": "Número máximo de reuniões recentes a sincronizar"},
+                    },
+                },
+                server_name="meeting_relator",
+            ),
+            handler=self._handle_sync_meetings,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="dispatch_meeting_demands",
+                description="Converte os itens de ação (action items) de uma reunião em demandas da Dark Factory, submetendo para aprovação HITL.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "meeting_id": {"type": "integer", "description": "ID da reunião"},
+                        "project_id": {"type": "string", "default": "darkfac", "description": "Projeto destino na Dark Factory"},
+                    },
+                    "required": ["meeting_id"],
+                },
+                server_name="meeting_relator",
+            ),
+            handler=self._handle_dispatch_meeting_demands,
+        )
+
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="launch_meeting_recorder",
+                description="Inicia a aplicação de gravação do MeetingRelator no Windows em background.",
+                parameters={"type": "object", "properties": {}},
+                server_name="meeting_relator",
+            ),
+            handler=self._handle_launch_meeting_recorder,
+        )
+
+    def _handle_list_recent_meetings(self, args: Dict[str, Any]) -> Any:
+        limit = args.get("limit", 10)
+        meetings = self.meetings.list_meetings(limit=limit)
+        return [m.model_dump() for m in meetings]
+
+    def _handle_get_meeting_details(self, args: Dict[str, Any]) -> Any:
+        meeting_id = args.get("meeting_id")
+        if meeting_id is None:
+            return {"status": "error", "message": "meeting_id é obrigatório."}
+        detail = self.meetings.get_meeting(int(meeting_id))
+        if not detail:
+            return {"status": "not_found", "message": f"Reunião com ID {meeting_id} não encontrada."}
+        return detail.model_dump()
+
+    def _handle_search_meetings(self, args: Dict[str, Any]) -> Any:
+        query = args.get("query", "")
+        limit = args.get("limit", 10)
+        results = self.meetings.search_meetings(query=query, limit=limit)
+        return [m.model_dump() for m in results]
+
+    def _handle_sync_meetings(self, args: Dict[str, Any]) -> Any:
+        limit = args.get("limit", 10)
+        res = self.meetings.sync_to_second_brain(limit=limit)
+        return res.model_dump()
+
+    def _handle_dispatch_meeting_demands(self, args: Dict[str, Any]) -> Any:
+        meeting_id = args.get("meeting_id")
+        if meeting_id is None:
+            return {"status": "error", "message": "meeting_id é obrigatório."}
+        proj = args.get("project_id", "darkfac")
+        actions = self.meetings.dispatch_action_items_to_darkfac(int(meeting_id), project_id=proj)
+        return [a.model_dump() for a in actions]
+
+    def _handle_launch_meeting_recorder(self, args: Dict[str, Any]) -> Any:
+        return self.meetings.launch_recorder()
 
     async def chat(
         self,

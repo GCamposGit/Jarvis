@@ -111,6 +111,7 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     app.state.models = model_router
     app.state.memory = assistant.memory
     app.state.bizops = assistant.bizops
+    app.state.meetings = assistant.meetings
 
     # Ensure static directory exists
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -263,6 +264,48 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     async def reject_bizops_action(action_id: str, operator: str = "operator") -> Dict[str, Any]:
         success = app.state.bizops.reject_action(action_id, operator=operator)
         return {"action_id": action_id, "rejected": success}
+
+    # MeetingRelator Multimodal Integration Endpoints
+    @app.get("/api/meetings")
+    async def get_meetings(
+        query: Optional[str] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        if query:
+            results = app.state.meetings.search_meetings(query=query, limit=limit)
+        else:
+            results = app.state.meetings.list_meetings(limit=limit)
+        return [m.model_dump() for m in results]
+
+    @app.get("/api/meetings/{meeting_id}")
+    async def get_meeting_by_id(meeting_id: int) -> Dict[str, Any]:
+        detail = app.state.meetings.get_meeting(meeting_id)
+        if not detail:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Meeting {meeting_id} not found",
+            )
+        return detail.model_dump()
+
+    @app.post("/api/meetings/sync")
+    async def sync_meetings(limit: int = 10) -> Dict[str, Any]:
+        res = app.state.meetings.sync_to_second_brain(limit=limit)
+        return res.model_dump()
+
+    @app.post("/api/meetings/{meeting_id}/dispatch-demands")
+    async def dispatch_meeting_demands(
+        meeting_id: int,
+        project_id: str = "darkfac",
+    ) -> List[Dict[str, Any]]:
+        actions = app.state.meetings.dispatch_action_items_to_darkfac(
+            meeting_id=meeting_id,
+            project_id=project_id,
+        )
+        return [a.model_dump() for a in actions]
+
+    @app.post("/api/meetings/launch-recorder")
+    async def launch_meeting_recorder() -> Dict[str, Any]:
+        return app.state.meetings.launch_recorder()
 
     # Static UI routes
     if STATIC_DIR.exists():

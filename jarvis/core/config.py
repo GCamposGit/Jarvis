@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -38,6 +39,36 @@ def _recover_env_or_registry(key: str) -> Optional[str]:
         except Exception:
             pass
     return val.strip() if (val and val.strip()) else None
+
+
+def _detect_meeting_relator_output_folder() -> Optional[Path]:
+    """Auto-detect the output folder configured in MeetingRelator."""
+    env_dir = os.environ.get("MEETINGRELATOR_OUTPUT_FOLDER")
+    if env_dir and os.path.isdir(env_dir):
+        return Path(env_dir)
+
+    local_app = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/AppData/Local")
+    cfg_file = Path(local_app) / "MeetingRelator" / "config.json"
+    if cfg_file.is_file():
+        try:
+            data = json.loads(cfg_file.read_text(encoding="utf-8"))
+            out = data.get("output_folder")
+            if out and os.path.isdir(out):
+                return Path(out)
+        except Exception:
+            pass
+
+    # Common fallback candidates
+    candidates = [
+        Path.home() / "OneDrive" / "Desktop" / "00. Externo" / "08. Meetings",
+        Path.home() / "Desktop" / "08. Meetings",
+        Path.home() / "Documents" / "Meetings",
+    ]
+    for c in candidates:
+        if (c / "meeting_database.db").is_file():
+            return c
+
+    return None
 
 
 class MCPServerConfig(BaseModel):
@@ -99,6 +130,17 @@ class JarvisConfig(BaseModel):
     # Memory and Second Brain Settings
     memory_db_path: Path = Field(
         default_factory=lambda: Path(os.environ.get("JARVIS_MEMORY_DB", str(Path.cwd() / ".jarvis" / "memory.db")))
+    )
+
+    # MeetingRelator Production Integration (Milestone 3)
+    meeting_relator_enabled: bool = Field(
+        default_factory=lambda: os.environ.get("JARVIS_MEETING_RELATOR_ENABLED", "1").lower() in ("1", "true")
+    )
+    meeting_relator_repo_path: Path = Field(
+        default_factory=lambda: Path(os.environ.get("JARVIS_MEETING_RELATOR_REPO", "C:/dev/MeetingRelator"))
+    )
+    meeting_relator_output_folder: Optional[Path] = Field(
+        default_factory=lambda: _detect_meeting_relator_output_folder()
     )
 
     # MCP Servers for Second Brain
