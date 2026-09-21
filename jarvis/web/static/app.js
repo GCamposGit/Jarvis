@@ -31,7 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
   checkHealth();
   refreshDemands();
   loadMCPTools();
+  refreshTelemetry();
   setInterval(checkHealth, 30000);
+  setInterval(refreshTelemetry, 15000);
 });
 
 function initUI() {
@@ -65,6 +67,10 @@ function initUI() {
   // Tabs
   document.getElementById('tab-btn-darkhub').addEventListener('click', () => switchTab('darkhub'));
   document.getElementById('tab-btn-mcp').addEventListener('click', () => switchTab('mcp'));
+  const btnTelemetry = document.getElementById('tab-btn-telemetry');
+  if (btnTelemetry) {
+    btnTelemetry.addEventListener('click', () => switchTab('telemetry'));
+  }
 
   // Demand Form
   document.getElementById('form-demand').addEventListener('submit', handleDemandSubmit);
@@ -404,11 +410,17 @@ async function sendMessage(overrideText) {
       provider: data.provider_used,
       tools: data.tools_executed,
       latency: data.latency_ms,
+      tokens_prompt: data.tokens_prompt,
+      tokens_completion: data.tokens_completion,
+      cost_usd: data.cost_usd,
     });
 
     // Update history
     chatHistory.push({ role: 'user', content: text });
     chatHistory.push({ role: 'assistant', content: data.response_text });
+
+    // Refresh telemetry immediately after interaction
+    refreshTelemetry();
 
     // Speak concise executive summary in Portuguese (Dual-Channel Output)
     speakResponse(data.response_text);
@@ -433,10 +445,22 @@ function appendMessage(role, text, meta) {
     const toolsExecutedHtml = (meta.tools && meta.tools.length > 0)
       ? meta.tools.map(t => `<span class="px-1.5 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-800 text-[10px] font-mono">⚡ ${t.tool}</span>`).join(' ')
       : '';
+    const totalTokens = (meta.tokens_prompt || 0) + (meta.tokens_completion || 0);
+    const tokensHtml = totalTokens > 0
+      ? `<span title="Prompt: ${meta.tokens_prompt || 0} | Completion: ${meta.tokens_completion || 0}">• 🔤 ${totalTokens} tok</span>`
+      : '';
+    let costText = '';
+    if (meta.cost_usd !== undefined && meta.cost_usd !== null) {
+      costText = meta.cost_usd === 0 ? '$0.00 (Local)' : `$${meta.cost_usd.toFixed(4)}`;
+    }
+    const costHtml = costText ? `<span class="text-emerald-400 font-semibold">• 💰 ${costText}</span>` : '';
+
     metaBadge = `
-      <div class="flex items-center gap-2 mt-2 pt-2 border-t border-slate-800/80 text-[10px] text-slate-500 font-mono">
+      <div class="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-slate-800/80 text-[10px] text-slate-500 font-mono">
         <span>${meta.model}</span>
         ${meta.latency ? `<span>• ${meta.latency}ms</span>` : ''}
+        ${tokensHtml}
+        ${costHtml}
         ${toolsExecutedHtml}
       </div>
     `;
@@ -494,19 +518,33 @@ function quickPrompt(text) {
 function switchTab(tab) {
   const tabDarkhub = document.getElementById('tab-darkhub');
   const tabMcp = document.getElementById('tab-mcp');
+  const tabTelemetry = document.getElementById('tab-telemetry');
   const btnDarkhub = document.getElementById('tab-btn-darkhub');
   const btnMcp = document.getElementById('tab-btn-mcp');
+  const btnTelemetry = document.getElementById('tab-btn-telemetry');
+
+  // Hide all containers
+  tabDarkhub.classList.add('hidden');
+  tabMcp.classList.add('hidden');
+  if (tabTelemetry) tabTelemetry.classList.add('hidden');
+
+  const activeClass = 'flex-1 py-1.5 px-2 rounded-lg bg-slate-800 text-white font-medium border border-slate-700 text-center truncate';
+  const inactiveClass = 'flex-1 py-1.5 px-2 rounded-lg text-slate-400 hover:text-white transition text-center truncate';
+
+  btnDarkhub.className = inactiveClass;
+  btnMcp.className = inactiveClass;
+  if (btnTelemetry) btnTelemetry.className = inactiveClass;
 
   if (tab === 'darkhub') {
     tabDarkhub.classList.remove('hidden');
-    tabMcp.classList.add('hidden');
-    btnDarkhub.className = 'flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700';
-    btnMcp.className = 'flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition';
-  } else {
-    tabDarkhub.classList.add('hidden');
+    btnDarkhub.className = activeClass;
+  } else if (tab === 'mcp') {
     tabMcp.classList.remove('hidden');
-    btnMcp.className = 'flex-1 py-1.5 px-3 rounded-lg bg-slate-800 text-white font-medium border border-slate-700';
-    btnDarkhub.className = 'flex-1 py-1.5 px-3 rounded-lg text-slate-400 hover:text-white transition';
+    btnMcp.className = activeClass;
+  } else if (tab === 'telemetry') {
+    if (tabTelemetry) tabTelemetry.classList.remove('hidden');
+    if (btnTelemetry) btnTelemetry.className = activeClass;
+    refreshTelemetry();
   }
 }
 
@@ -599,15 +637,29 @@ function closeNewDemandModal() {
   document.getElementById('modal-demand').classList.add('hidden');
 }
 
+let isSubmittingDemand = false;
+
 async function handleDemandSubmit(e) {
   e.preventDefault();
+  if (isSubmittingDemand) return;
+
   const proj = document.getElementById('demand-project').value;
   const title = document.getElementById('demand-title').value.trim();
   const problem = document.getElementById('demand-problem').value.trim();
 
   if (!title) return;
 
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const originalBtnText = submitBtn ? submitBtn.innerText : 'Registrar Demanda';
+
   try {
+    isSubmittingDemand = true;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Registrando...';
+      submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
     const res = await fetch('/api/darkfac/demands', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -619,17 +671,29 @@ async function handleDemandSubmit(e) {
     });
 
     if (res.ok) {
+      const data = await res.json();
       closeNewDemandModal();
       document.getElementById('demand-title').value = '';
       document.getElementById('demand-problem').value = '';
       refreshDemands();
-      appendMessage('assistant', `✅ **Demanda registrada com sucesso no DarkHub!**\n- **Título**: ${title}\n- **Projeto**: \`${proj}\``);
+      if (data.deduplicated) {
+        appendMessage('assistant', `ℹ️ **Demanda já existente no DarkHub (${data.id})!**\n- **Título**: ${title}\n- **Projeto**: \`${proj}\`\n- **Status**: \`${data.status}\` (duplicação prevenida)`);
+      } else {
+        appendMessage('assistant', `✅ **Demanda registrada com sucesso no DarkHub!**\n- **Título**: ${title}\n- **Projeto**: \`${proj}\``);
+      }
     } else {
       const err = await res.json();
       alert(`Erro ao registrar demanda: ${JSON.stringify(err)}`);
     }
   } catch (err) {
     alert(`Erro de rede ao enviar demanda: ${err.message}`);
+  } finally {
+    isSubmittingDemand = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = originalBtnText;
+      submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
   }
 }
 
@@ -787,6 +851,167 @@ function speakResponse(markdownText) {
     console.warn('SpeechSynthesis playback failed:', err);
     isSpeaking = false;
     updateTTSButtonUI();
+  }
+}
+
+function formatUsdAmount(val) {
+  if (val === undefined || val === null || isNaN(val)) return '0.00';
+  const num = Number(val);
+  if (num > 0 && num < 0.01) return num.toFixed(3);
+  return num.toFixed(2);
+}
+
+async function refreshTelemetry() {
+  try {
+    const [summaryRes, budgetRes] = await Promise.all([
+      fetch('/api/telemetry/summary'),
+      fetch('/api/telemetry/budget'),
+    ]);
+
+    if (!summaryRes.ok || !budgetRes.ok) return;
+
+    const summary = await summaryRes.json();
+    const budgetData = await budgetRes.json();
+    const status = budgetData.status || {};
+    const policy = budgetData.policy || {};
+
+    const dailySpentNum = Number(status.daily_spent_usd ?? status.daily_spend_usd ?? 0.0);
+    const dailyLimitNum = Number(status.daily_limit_usd ?? policy.daily_limit_usd ?? 2.0);
+    const totalSavingsNum = Number(summary.total_savings_usd ?? 0.0);
+    const promptTok = Number(summary.prompt_tokens ?? summary.total_prompt_tokens ?? 0);
+    const compTok = Number(summary.completion_tokens ?? summary.total_completion_tokens ?? 0);
+    const totalTok = Number(summary.total_tokens ?? (promptTok + compTok));
+
+    // 1. Header Badges
+    const budgetDot = document.getElementById('budget-dot');
+    const budgetText = document.getElementById('budget-text');
+    const savingsText = document.getElementById('savings-text');
+
+    if (budgetText) {
+      budgetText.innerText = `Gasto: $${formatUsdAmount(dailySpentNum)} / $${formatUsdAmount(dailyLimitNum)}`;
+    }
+
+    if (budgetDot) {
+      if (status.status === 'exceeded') {
+        budgetDot.className = 'w-2 h-2 rounded-full bg-red-500 animate-ping';
+      } else if (status.status === 'warning') {
+        budgetDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+      } else {
+        budgetDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+      }
+    }
+
+    if (savingsText) {
+      savingsText.innerText = `Economia: $${formatUsdAmount(totalSavingsNum)}`;
+    }
+
+    // 2. Sidebar Card Details
+    const cardStatus = document.getElementById('card-budget-status');
+    const cardBar = document.getElementById('card-budget-bar');
+    const cardDailySpend = document.getElementById('card-daily-spend');
+    const cardDailyLimit = document.getElementById('card-daily-limit');
+
+    if (cardStatus) {
+      cardStatus.innerText = (status.status || 'ok').toUpperCase();
+      if (status.status === 'exceeded') {
+        cardStatus.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-red-950 text-red-400 border border-red-800';
+      } else if (status.status === 'warning') {
+        cardStatus.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-amber-950 text-amber-400 border border-amber-800';
+      } else {
+        cardStatus.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-emerald-950 text-emerald-400 border border-emerald-800';
+      }
+    }
+
+    if (cardBar) {
+      let pct = 0;
+      if (dailyLimitNum > 0) {
+        pct = Math.min(100, Math.round((dailySpentNum / dailyLimitNum) * 100));
+      } else if (dailySpentNum > 0) {
+        pct = 100;
+      }
+      cardBar.style.width = `${pct}%`;
+      if (pct >= 100) {
+        cardBar.className = 'bg-red-500 h-2 rounded-full transition-all duration-300';
+      } else if (pct >= 80) {
+        cardBar.className = 'bg-amber-400 h-2 rounded-full transition-all duration-300';
+      } else {
+        cardBar.className = 'bg-emerald-500 h-2 rounded-full transition-all duration-300';
+      }
+    }
+
+    if (cardDailySpend) {
+      cardDailySpend.innerText = `$${formatUsdAmount(dailySpentNum)} gasto`;
+    }
+    if (cardDailyLimit) {
+      cardDailyLimit.innerText = `Teto: $${formatUsdAmount(dailyLimitNum)}`;
+    }
+
+    // 3. Grid Metrics
+    const cardTokens = document.getElementById('card-total-tokens');
+    const cardRatio = document.getElementById('card-tokens-ratio');
+    const cardSavings = document.getElementById('card-total-savings');
+
+    if (cardTokens) {
+      cardTokens.innerText = totalTok.toLocaleString();
+    }
+    if (cardRatio) {
+      cardRatio.innerText = `Prompt: ${promptTok.toLocaleString()} | Comp: ${compTok.toLocaleString()}`;
+    }
+    if (cardSavings) {
+      cardSavings.innerText = `$${formatUsdAmount(totalSavingsNum)}`;
+    }
+
+    // 4. Breakdown by model
+    const modelsContainer = document.getElementById('telemetry-models-breakdown');
+    if (modelsContainer && summary.by_model) {
+      const modelKeys = Object.keys(summary.by_model);
+      if (modelKeys.length === 0) {
+        modelsContainer.innerHTML = '<div class="p-2 rounded-lg bg-surface-850 border border-slate-800 text-[11px] text-slate-400 text-center">Sem dados de consumo ainda.</div>';
+      } else {
+        modelsContainer.innerHTML = modelKeys.map(m => {
+          const stats = summary.by_model[m];
+          const costVal = Number(stats.cost_usd || 0);
+          const costStr = costVal === 0 ? '$0.00' : `$${formatUsdAmount(costVal)}`;
+          return `
+            <div class="p-2 rounded-lg bg-surface-850 border border-slate-800 text-[11px] flex items-center justify-between">
+              <div class="truncate max-w-[150px]">
+                <div class="text-slate-300 font-medium truncate" title="${escapeHtml(m)}">${escapeHtml(m)}</div>
+                <div class="text-[10px] text-slate-500 font-mono">${(stats.tokens || 0).toLocaleString()} tok (${stats.calls || 0}x)</div>
+              </div>
+              <div class="text-right font-mono text-emerald-400 font-semibold">${costStr}</div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 5. Circuit Breaker & Fallback Indicators
+    const cardCbStatus = document.getElementById('card-cb-status');
+    const cardCbFallback = document.getElementById('card-cb-fallback');
+    const isCbTripped = Boolean(status.circuit_breaker_active);
+    const isCbArmed = Boolean(policy.enforce_circuit_breaker ?? policy.circuit_breaker_enabled ?? true);
+
+    if (cardCbStatus) {
+      if (isCbTripped) {
+        cardCbStatus.innerText = '🔴 Disparado (Bloqueio Nuvem)';
+        cardCbStatus.className = 'font-mono text-red-400 font-semibold';
+      } else if (isCbArmed) {
+        cardCbStatus.innerText = '🟢 Pronto (Armado)';
+        cardCbStatus.className = 'font-mono text-emerald-400';
+      } else {
+        cardCbStatus.innerText = '⚪ Desativado';
+        cardCbStatus.className = 'font-mono text-slate-400';
+      }
+    }
+
+    if (cardCbFallback) {
+      const fallbackActive = Boolean(policy.auto_fallback_to_local ?? policy.fallback_to_local_on_limit ?? true);
+      cardCbFallback.innerText = fallbackActive ? '🟢 Ativado' : '⚪ Desativado';
+      cardCbFallback.className = fallbackActive ? 'font-mono text-emerald-400' : 'font-mono text-slate-400';
+    }
+
+  } catch (err) {
+    console.warn('Telemetry refresh failed:', err);
   }
 }
 

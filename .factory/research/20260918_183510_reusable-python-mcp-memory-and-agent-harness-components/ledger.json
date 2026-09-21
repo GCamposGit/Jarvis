@@ -1,0 +1,294 @@
+{
+  "ledger_id": "20260918_183510_reusable-python-mcp-memory-and-agent-harness-components",
+  "query": "reusable python mcp memory and agent harness components",
+  "topic_type": "topic_concept",
+  "created_at": "2026-09-18T18:35:10.267612+00:00",
+  "summary_executive": "Pesquisa conceitual estruturada sobre 'reusable python mcp memory and agent harness components'. Catalogadas 5 publicações acadêmicas de alta relevância com DOI/arXiv IDs.",
+  "sources": [
+    {
+      "id": "arxiv:2605.18747v1",
+      "title": "Code as Agent Harness",
+      "url": "http://arxiv.org/abs/2605.18747v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Xuying Ning",
+        "Katherine Tieu",
+        "Dongqi Fu",
+        "Tianxin Wei",
+        "Zihao Li",
+        "Yuanchen Bei",
+        "Jiaru Zou",
+        "Mengting Ai",
+        "Zhining Liu",
+        "Ting-Wei Li",
+        "Lingjie Chen",
+        "Yanjun Zhao",
+        "Ke Yang",
+        "Bingxuan Li",
+        "Cheng Qian",
+        "Gaotang Li",
+        "Xiao Lin",
+        "Zhichen Zeng",
+        "Ruizhong Qiu",
+        "Sirui Chen",
+        "Yifan Sun",
+        "Xiyuan Yang",
+        "Ruida Wang",
+        "Rui Pan",
+        "Chenyuan Yang",
+        "Dylan Zhang",
+        "Liri Fang",
+        "Zikun Cui",
+        "Yang Cao",
+        "Pan Chen",
+        "Dorothy Sun",
+        "Ren Chen",
+        "Mahesh Srinivasan",
+        "Nipun Mathur",
+        "Yinglong Xia",
+        "Hong Li",
+        "Hong Yan",
+        "Pan Lu",
+        "Lingming Zhang",
+        "Tong Zhang",
+        "Hanghang Tong",
+        "Jingrui He"
+      ],
+      "published_date": "2026-05-18T17:59:03Z",
+      "summary": "Recent large language models (LLMs) have demonstrated strong capabilities in understanding and generating code, from competitive programming to repository-level software engineering. In emerging agentic systems, code is no longer only a target output. It increasingly serves as an operational substrate for agent reasoning, acting, environment modeling, and execution-based verification. We frame this shift through the lens of agent harnesses and introduce code as agent harness: a unified view that centers code as the basis for agent infrastructure. To systematically study this perspective, we organize the survey around three connected layers. First, we study the harness interface, where code connects agents to reasoning, action, and environment modeling. Second, we examine harness mechanisms: planning, memory, and tool use for long-horizon execution, together with feedback-driven control and optimization that make harness reliable and adaptive. Third, we discuss scaling the harness from single-agent systems to multi-agent settings, where shared code artifacts support multi-agent coordination, review, and verification. Across these layers, we summarize representative methods and practical applications of code as agent harness, spanning coding assistants, GUI/OS automation, embodied agents, scientific discovery, personalization and recommendation, DevOps, and enterprise workflows. We further outline open challenges for harness engineering, including evaluation beyond final task success, verification under incomplete feedback, regression-free harness improvement, consistent shared state across multiple agents, human oversight for safety-critical actions, and extensions to multimodal environments. By centering code as the harness of agentic AI, this survey provides a unified roadmap toward executable, verifiable, and stateful AI agent systems.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2605.18747v1"
+      }
+    },
+    {
+      "id": "arxiv:2605.27825v1",
+      "title": "MRMMIA: Membership Inference Attacks on Memory in Chat Agents",
+      "url": "http://arxiv.org/abs/2605.27825v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Kai Chen",
+        "Yan Pang",
+        "Tianhao Wang"
+      ],
+      "published_date": "2026-05-27T01:31:40Z",
+      "summary": "Membership inference attacks (MIAs) test whether a target data record belongs to a system's private data, and have become a standard tool to measure privacy leakage in machine learning systems. Prior work has primarily focused on training corpora or retrieval databases. However, MIAs against agent memory have received less attention, even though such memory can contain sensitive user-agent interactions, retrieved facts, and user preferences. Therefore, in this work, we focus on chat agent memory MIAs, where an adversary infers whether a candidate memory unit belongs to the chat agent's memory store. We propose Multi-Recall Memory MIA (MRMMIA), a unified attack that utilizes multiple recall probes to the agent to extract the membership signal across black-box, gray-box, and white-box settings. Our experiments demonstrate that MRMMIA consistently outperforms baselines. Our results expose the privacy risk in agents and provide an initial evaluation framework for membership leakage in chat-agent memory systems.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2605.27825v1"
+      }
+    },
+    {
+      "id": "arxiv:2603.03329v1",
+      "title": "AutoHarness: improving LLM agents by automatically synthesizing a code harness",
+      "url": "http://arxiv.org/abs/2603.03329v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Xinghua Lou",
+        "Miguel Lázaro-Gredilla",
+        "Antoine Dedieu",
+        "Carter Wendelken",
+        "Wolfgang Lehrach",
+        "Kevin P. Murphy"
+      ],
+      "published_date": "2026-02-10T14:12:54Z",
+      "summary": "Despite significant strides in language models in the last few years, when used as agents, such models often try to perform actions that are not just suboptimal for a given state, but are strictly prohibited by the external environment. For example, in the recent Kaggle GameArena chess competition, 78% of Gemini-2.5-Flash losses were attributed to illegal moves. Often people manually write \"harnesses\" around LLMs to prevent such failures. In this paper, we demonstrate that Gemini-2.5-Flash can automatically synthesize such a code harness, using a small number of rounds of iterative code refinement given feedback from the (game) environment. The resulting harness prevents all illegal moves in 145 different TextArena games (both 1-player and 2-player), enabling the smaller Gemini-2.5-Flash model to outperform larger models, such as Gemini-2.5-Pro. Pushing our technique to the limit, we can get Gemini-2.5-Flash to generate the entire policy in code, thus eliminating the need to use the LLM at decision making time. The resulting code-policy receives a higher average reward than Gemini-2.5-Pro and GPT-5.2-High on 16 TextArena 1-player games. Our results show that using a smaller model to synthesize a custom code harness (or entire policy) can outperform a much larger model, while also being more cost effective.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2603.03329v1"
+      }
+    },
+    {
+      "id": "arxiv:2607.13157v1",
+      "title": "Oracle Agent Memory as an Enterprise Memory Substrate for Long-Horizon AI Agents",
+      "url": "http://arxiv.org/abs/2607.13157v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Richmond Alake",
+        "Cesare Bernardis",
+        "Paul Cayet",
+        "Luca Engel",
+        "Damien Hilloulin",
+        "Sungpack Hong",
+        "Allen Hosler",
+        "Nickolas Kavantzas",
+        "Ingo Kossyk",
+        "Son Le",
+        "Rhicheek Patra",
+        "Kartik Talamadupula",
+        "Valentin Venzin"
+      ],
+      "published_date": "2026-07-14T18:06:53Z",
+      "summary": "Agent memory is a systems problem for long-horizon agents. Practical deployments require retention of task state across extended conversations, recovery of user-specific facts and preferences across sessions, and accumulation of procedural knowledge from prior outcomes. These requirements extend beyond document retrieval: a memory layer must determine which interactions become durable state, how that state is scoped, how it is retrieved under latency constraints, and how it is revised or removed over time. This report studies Oracle Agent Memory as a database-native memory substrate built on Oracle Database. Three themes organize the discussion: memory as a lifecycle spanning ingestion, extraction, consolidation, retrieval, summarization, and revision or removal; a layered architecture that separates an active memory core from a passive memory-store interface with explicit scope control across users, agents, and threads; and evaluation methodology in which downstream task accuracy is complemented by memory-centric measures such as evidence retrieval, recall, latency, and estimated token use. The report summarizes LongMemEval results, reaching 93.8% accuracy, compares Oracle Agent Memory against flat-history baselines, using about 10.7x fewer tokens, and published or reported external baselines where available, and closes with implementation-oriented appendix material covering setup, thread lifecycle, and search semantics.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2607.13157v1"
+      }
+    },
+    {
+      "id": "arxiv:2010.14827v1",
+      "title": "ePython: An implementation of Python for the many-core Epiphany coprocessor",
+      "url": "http://arxiv.org/abs/2010.14827v1",
+      "source_type": "paper",
+      "authors_or_maintainers": [
+        "Nick Brown"
+      ],
+      "published_date": "2020-10-28T09:01:27Z",
+      "summary": "The Epiphany is a many-core, low power, low on-chip memory architecture and one can very cheaply gain access to a number of parallel cores which is beneficial for HPC education and prototyping. The very low power nature of these architectures also means that there is potential for their use in future HPC machines, however there is a high barrier to entry in programming them due to the associated complexities and immaturity of supporting tools. In this paper we present our work on ePython, a subset of Python for the Epiphany and similar many-core co-processors. Due to the limited on-chip memory per core we have developed a new Python interpreter and this, combined with additional support for parallelism, has meant that novices can take advantage of Python to very quickly write parallel codes on the Epiphany and explore concepts of HPC using a smaller scale parallel machine. The high level nature of Python opens up new possibilities on the Epiphany, we examine a computationally intensive Gauss-Seidel code from the programmability and performance perspective, discuss running Python hybrid on both the host CPU and Epiphany, and interoperability between a full Python interpreter on the CPU and ePython on the Epiphany. The result of this work is support for developing Python on the Epiphany, which can be applied to other similar architectures, that the community have already started to adopt and use to explore concepts of parallelism and HPC.",
+      "license": "arXiv Open Access / Creative Commons",
+      "license_category": "permissive",
+      "authority_tier": "high_credibility",
+      "credibility_score": 0.95,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "arxiv_id": "2010.14827v1"
+      }
+    },
+    {
+      "id": "trend:hn:32413070",
+      "title": "Launch HN: Sematic (YC S22) – Open-source framework to build ML pipelines faster",
+      "url": "https://news.ycombinator.com/item?id=32413070",
+      "source_type": "expert_trend",
+      "authors_or_maintainers": [
+        "neutralino1"
+      ],
+      "published_date": "2022-08-10T14:56:50Z",
+      "summary": "Discussão de engenharia com alta repercussão (121 pontos, 47 comentários). Foco em ferramentas modernas e adoção por desenvolvedores.",
+      "license": "N/A (Trend Discussion)",
+      "license_category": "unknown",
+      "authority_tier": "trend_signal",
+      "credibility_score": 0.75,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "points": 121,
+        "comments": 47,
+        "community": "HackerNews / Elite Developers"
+      }
+    },
+    {
+      "id": "trend:hn:47221459",
+      "title": "Show HN: btrc – C, but better. Built with AI in just a few weeknights",
+      "url": "https://github.com/schiffy91/btrc",
+      "source_type": "expert_trend",
+      "authors_or_maintainers": [
+        "schiffy"
+      ],
+      "published_date": "2026-03-02T17:52:34Z",
+      "summary": "Discussão de engenharia com alta repercussão (5 pontos, 1 comentários). Foco em ferramentas modernas e adoção por desenvolvedores.",
+      "license": "N/A (Trend Discussion)",
+      "license_category": "unknown",
+      "authority_tier": "trend_signal",
+      "credibility_score": 0.75,
+      "stars": null,
+      "has_test_suite": null,
+      "metadata": {
+        "points": 5,
+        "comments": 1,
+        "community": "HackerNews / Elite Developers"
+      }
+    }
+  ],
+  "insights": [
+    {
+      "source_id": "arxiv:2605.18747v1",
+      "source_title": "Code as Agent Harness",
+      "key_insight": "Fundamentação teórica extraída de: Recent large language models (LLMs) have demonstrated strong capabilities in understanding and generating code, from competitive programming to repository-level software engineering. In emerging agentic systems, code is no longer only a tar...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2605.18747v1"
+      ]
+    },
+    {
+      "source_id": "arxiv:2605.27825v1",
+      "source_title": "MRMMIA: Membership Inference Attacks on Memory in Chat Agents",
+      "key_insight": "Fundamentação teórica extraída de: Membership inference attacks (MIAs) test whether a target data record belongs to a system's private data, and have become a standard tool to measure privacy leakage in machine learning systems. Prior work has primarily focused on training c...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2605.27825v1"
+      ]
+    },
+    {
+      "source_id": "arxiv:2603.03329v1",
+      "source_title": "AutoHarness: improving LLM agents by automatically synthesizing a code harness",
+      "key_insight": "Fundamentação teórica extraída de: Despite significant strides in language models in the last few years, when used as agents, such models often try to perform actions that are not just suboptimal for a given state, but are strictly prohibited by the external environment. For...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2603.03329v1"
+      ]
+    },
+    {
+      "source_id": "arxiv:2607.13157v1",
+      "source_title": "Oracle Agent Memory as an Enterprise Memory Substrate for Long-Horizon AI Agents",
+      "key_insight": "Fundamentação teórica extraída de: Agent memory is a systems problem for long-horizon agents. Practical deployments require retention of task state across extended conversations, recovery of user-specific facts and preferences across sessions, and accumulation of procedural ...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2607.13157v1"
+      ]
+    },
+    {
+      "source_id": "arxiv:2010.14827v1",
+      "source_title": "ePython: An implementation of Python for the many-core Epiphany coprocessor",
+      "key_insight": "Fundamentação teórica extraída de: The Epiphany is a many-core, low power, low on-chip memory architecture and one can very cheaply gain access to a number of parallel cores which is beneficial for HPC education and prototyping. The very low power nature of these architectur...",
+      "architectural_implications": "Basear o design do componente nos padrões formais documentados neste paper.",
+      "future_reference_value": "Consultar equações e garantias de consistência em versões futuras.",
+      "authority_tier": "high_credibility",
+      "code_patterns_or_algorithms": [
+        "2010.14827v1"
+      ]
+    },
+    {
+      "source_id": "trend:hn:32413070",
+      "source_title": "Launch HN: Sematic (YC S22) – Open-source framework to build ML pipelines faster",
+      "key_insight": "Recurso/discussão com forte tração na comunidade: 'Launch HN: Sematic (YC S22) – Open-source framework to build ML pipelines faster'. Engenheiros e experts estão priorizando esta abordagem para ganho de ergonomia e velocidade.",
+      "architectural_implications": "IDEIA DE FEATURE: Avaliar a inclusão dessa funcionalidade no roadmap. ATENÇÃO: A arquitetura concreta, schemas e testes DEVEM ser fundamentados nas fontes canônicas de alta credibilidade.",
+      "future_reference_value": "Sinal de mercado e preferência de desenvolvedores documentado em https://news.ycombinator.com/item?id=32413070.",
+      "authority_tier": "trend_signal",
+      "code_patterns_or_algorithms": [
+        "Launch HN: Sematic (YC S22) – Open-sourc"
+      ]
+    },
+    {
+      "source_id": "trend:hn:47221459",
+      "source_title": "Show HN: btrc – C, but better. Built with AI in just a few weeknights",
+      "key_insight": "Recurso/discussão com forte tração na comunidade: 'Show HN: btrc – C, but better. Built with AI in just a few weeknights'. Engenheiros e experts estão priorizando esta abordagem para ganho de ergonomia e velocidade.",
+      "architectural_implications": "IDEIA DE FEATURE: Avaliar a inclusão dessa funcionalidade no roadmap. ATENÇÃO: A arquitetura concreta, schemas e testes DEVEM ser fundamentados nas fontes canônicas de alta credibilidade.",
+      "future_reference_value": "Sinal de mercado e preferência de desenvolvedores documentado em https://github.com/schiffy91/btrc.",
+      "authority_tier": "trend_signal",
+      "code_patterns_or_algorithms": [
+        "Show HN: btrc – C, but better. Built wit"
+      ]
+    }
+  ],
+  "decisions_linked": [],
+  "related_tickets": []
+}
