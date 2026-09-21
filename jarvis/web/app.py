@@ -195,6 +195,14 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
             acceptance_criteria=req.acceptance_criteria,
         )
 
+    @app.post("/api/darkfac/demands/{ticket_id}/cancel")
+    async def cancel_darkfac_demand(ticket_id: str, notes: Optional[str] = None) -> Dict[str, Any]:
+        return await darkfac_client.cancel_demand(ticket_id=ticket_id, notes=notes)
+
+    @app.post("/api/darkfac/demands/deduplicate")
+    async def deduplicate_darkfac_demands(project_id: Optional[str] = "jarvis") -> Dict[str, Any]:
+        return await darkfac_client.deduplicate_demands(project_id=project_id)
+
     @app.get("/api/mcp/tools", response_model=List[MCPTool])
     async def get_mcp_tools() -> List[MCPTool]:
         return mcp_manager.list_tools()

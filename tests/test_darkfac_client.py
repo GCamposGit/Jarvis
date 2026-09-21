@@ -98,3 +98,89 @@ def test_darkhub_create_demand():
         assert res.get("title") == "Criar novo módulo"
 
     asyncio.run(_run())
+
+
+def test_darkhub_create_demand_deduplication():
+    async def _run():
+        def mock_handler(request: httpx.Request):
+            if request.url.path == "/api/demands/tickets" and request.method == "GET":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {
+                            "id": "JRV-02",
+                            "title": "Tabela para configurar parâmetros",
+                            "project_id": "jarvis",
+                            "status": "planned",
+                            "origin": "user",
+                        }
+                    ],
+                )
+            return httpx.Response(404)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        df = DarkFactoryClient(http_client=client)
+
+        res = await df.create_demand(
+            title="Tabela para configurar parâmetros",
+            problem_statement="Tentando criar duplicata",
+            project_id="jarvis",
+        )
+        assert res.get("id") == "JRV-02"
+        assert res.get("deduplicated") is True
+
+    asyncio.run(_run())
+
+
+def test_darkhub_cancel_demand():
+    async def _run():
+        def mock_handler(request: httpx.Request):
+            if request.url.path == "/api/demands/tickets/JRV-03/status" and request.method == "PATCH":
+                assert request.url.params.get("status") == "cancelled"
+                return httpx.Response(
+                    200,
+                    json={"id": "JRV-03", "status": "cancelled"},
+                )
+            return httpx.Response(404)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        df = DarkFactoryClient(http_client=client)
+
+        res = await df.cancel_demand("JRV-03", notes="Removendo duplicata")
+        assert res.get("id") == "JRV-03"
+        assert res.get("status") == "cancelled"
+
+    asyncio.run(_run())
+
+
+def test_darkhub_deduplicate_demands():
+    async def _run():
+        cancelled = []
+
+        def mock_handler(request: httpx.Request):
+            if request.url.path == "/api/demands/tickets" and request.method == "GET":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {"id": "JRV-02", "title": "Tabela para configurar parâmetros", "status": "planned"},
+                        {"id": "JRV-03", "title": "Tabela para configurar parâmetros", "status": "planned"},
+                        {"id": "JRV-04", "title": "Tabela para configurar parâmetros", "status": "planned"},
+                        {"id": "JRV-05", "title": "Outra demanda", "status": "planned"},
+                    ],
+                )
+            if "/status" in request.url.path and request.method == "PATCH":
+                ticket_id = request.url.path.split("/")[4]
+                cancelled.append(ticket_id)
+                return httpx.Response(200, json={"id": ticket_id, "status": "cancelled"})
+            return httpx.Response(404)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        df = DarkFactoryClient(http_client=client)
+
+        result = await df.deduplicate_demands(project_id="jarvis")
+        assert result["status"] == "success"
+        assert result["kept_count"] == 2
+        assert result["cancelled_count"] == 2
+        assert cancelled == ["JRV-03", "JRV-04"]
+
+    asyncio.run(_run())

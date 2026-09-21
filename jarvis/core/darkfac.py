@@ -107,6 +107,24 @@ class DarkFactoryClient:
         non_goals: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Create a new formal demand/ticket in the Dark Factory backlog."""
+        # Check if an active demand with identical title already exists in the project
+        clean_title = title.strip().lower()
+        try:
+            existing_demands = await self.list_demands(project_id=project_id)
+            for ed in existing_demands:
+                if ed.title.strip().lower() == clean_title and ed.status not in ("cancelled", "completed"):
+                    logger.info("Demand '%s' already exists as %s with status %s. Returning existing.", title, ed.id, ed.status)
+                    return {
+                        "id": ed.id,
+                        "title": ed.title,
+                        "project_id": ed.project_id,
+                        "status": ed.status,
+                        "deduplicated": True,
+                        "message": f"Demanda já registrada no backlog ({ed.id}). Evitada duplicação.",
+                    }
+        except Exception as exc:
+            logger.debug("Deduplication pre-check failed: %s", exc)
+
         # 1. Fetch next ticket ID
         next_id = f"USR-{int(httpx._utils.get_environment_proxies().get('dummy', 1))}"
         try:
@@ -146,6 +164,62 @@ class DarkFactoryClient:
         except Exception as exc:
             logger.error("Error creating demand in DarkHub: %s", exc)
             return {"error": str(exc), "payload": ticket_payload}
+
+    async def update_demand_status(
+        self,
+        ticket_id: str,
+        status: str = "cancelled",
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Update status of a demand ticket in the DarkHub backlog (e.g. cancelled, planned, completed)."""
+        params = {"status": status}
+        if notes:
+            params["notes"] = notes
+
+        try:
+            resp = await self._client.patch(
+                f"{self.base_url}/api/demands/tickets/{ticket_id}/status",
+                params=params,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            return {"error": f"Failed with HTTP {resp.status_code}: {resp.text}", "status_code": resp.status_code}
+        except Exception as exc:
+            logger.error("Error updating demand status in DarkHub: %s", exc)
+            return {"error": str(exc)}
+
+    async def cancel_demand(self, ticket_id: str, notes: Optional[str] = None) -> Dict[str, Any]:
+        """Cancel or deactivate a demand ticket in DarkHub."""
+        return await self.update_demand_status(ticket_id, status="cancelled", notes=notes or "Cancelada via Jarvis")
+
+    async def deduplicate_demands(self, project_id: Optional[str] = None) -> Dict[str, Any]:
+        """Find active demands with identical titles and cancel duplicates, keeping the oldest instance."""
+        demands = await self.list_demands(project_id=project_id)
+        seen: Dict[str, str] = {}
+        cancelled_tickets: List[Dict[str, str]] = []
+        kept_tickets: List[Dict[str, str]] = []
+
+        for d in demands:
+            if d.status in ("cancelled", "completed"):
+                continue
+            normalized_title = d.title.strip().lower()
+            if normalized_title in seen:
+                primary_id = seen[normalized_title]
+                res = await self.cancel_demand(
+                    d.id, notes=f"Duplicata automática de {primary_id} cancelada pelo Jarvis"
+                )
+                cancelled_tickets.append({"id": d.id, "title": d.title, "result": str(res)})
+            else:
+                seen[normalized_title] = d.id
+                kept_tickets.append({"id": d.id, "title": d.title})
+
+        return {
+            "status": "success",
+            "kept_count": len(kept_tickets),
+            "cancelled_count": len(cancelled_tickets),
+            "kept": kept_tickets,
+            "cancelled": cancelled_tickets,
+        }
 
     async def get_telemetry_stats(self) -> Dict[str, Any]:
         """Fetch telemetry and resource stats from DarkHub."""

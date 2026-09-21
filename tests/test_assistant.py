@@ -7,6 +7,7 @@ import json
 import httpx
 
 from jarvis.core.assistant import JarvisAssistant
+from jarvis.core.config import JarvisConfig
 from jarvis.core.darkfac import DarkFactoryClient
 from jarvis.core.models import UnifiedModelRouter
 
@@ -190,6 +191,108 @@ def test_assistant_sua_memoria_resolution():
         assert "R$10.000" in res.response_text
         assert "Cintia" in res.response_text
         assert "memória episódica" in res.response_text
+
+    asyncio.run(_run())
+
+
+def test_assistant_qwen_raw_json_tool_calling_executes_and_synthesizes():
+    async def _run():
+        turn_count = 0
+
+        def mock_handler(request: httpx.Request):
+            nonlocal turn_count
+            if request.url.path == "/api/chat":
+                turn_count += 1
+                if turn_count == 1:
+                    # First turn: model outputs raw JSON tool call in content
+                    raw_content = '{"name": "recall_memory", "arguments": {"query": "mansão do lago"}}'
+                    return httpx.Response(
+                        200,
+                        json={
+                            "message": {"role": "assistant", "content": raw_content},
+                            "prompt_eval_count": 80,
+                            "eval_count": 20,
+                        },
+                    )
+                else:
+                    # Second turn (synthesis): model receives tool outputs and provides clean answer
+                    return httpx.Response(
+                        200,
+                        json={
+                            "message": {
+                                "role": "assistant",
+                                "content": "A expectativa de receita mensal da Mansão do Lago é de R$10.000 e quem conduz a operação é a Cintia, sua esposa.",
+                            },
+                            "prompt_eval_count": 120,
+                            "eval_count": 35,
+                        },
+                    )
+            return httpx.Response(404)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        cfg = JarvisConfig(default_provider="ollama", default_local_model="qwen-code-deep:latest")
+        router = UnifiedModelRouter(config=cfg, http_client=client)
+        assistant = JarvisAssistant(config=cfg, model_router=router)
+
+        # Store test fact
+        assistant.memory.store_fact(
+            key="mansao_do_lago_operacao",
+            value="A mansão do lago fatura R$10.000/mês e a operação é tocada pela Cintia.",
+            category="business_rule",
+            tags=["mansao", "lago", "cintia"],
+        )
+
+        res = await assistant.chat("Qual é a expectativa de receita mensal da mansão do Lago e quem toca a operação?")
+
+        assert len(res.tools_executed) == 1
+        assert res.tools_executed[0]["tool"] == "recall_memory"
+        assert "R$10.000" in res.response_text
+        assert "Cintia" in res.response_text
+        # Ensure no raw JSON leaked in response text
+        assert '{"name":' not in res.response_text
+
+    asyncio.run(_run())
+
+
+def test_assistant_darkfac_mcp_tools():
+    async def _run():
+        cancelled_list = []
+
+        def mock_handler(request: httpx.Request):
+            if request.url.path == "/api/demands/tickets" and request.method == "GET":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {"id": "JRV-01", "title": "Demanda 1", "project_id": "jarvis", "status": "planned", "origin": "user"},
+                        {"id": "JRV-02", "title": "Tabela config", "project_id": "jarvis", "status": "planned", "origin": "user"},
+                        {"id": "JRV-03", "title": "Tabela config", "project_id": "jarvis", "status": "planned", "origin": "user"},
+                    ],
+                )
+            if "/status" in request.url.path and request.method == "PATCH":
+                tid = request.url.path.split("/")[4]
+                cancelled_list.append(tid)
+                return httpx.Response(200, json={"id": tid, "status": "cancelled"})
+            return httpx.Response(404)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        cfg = JarvisConfig()
+        df = DarkFactoryClient(config=cfg, http_client=client)
+        assistant = JarvisAssistant(config=cfg, darkfac_client=df)
+
+        # Test list_dark_factory_demands
+        list_res = await assistant.mcp.execute_tool("list_dark_factory_demands", {"project_id": "jarvis"})
+        assert not list_res.is_error
+        assert len(list_res.output) == 3
+
+        # Test cancel_dark_factory_demand
+        cancel_res = await assistant.mcp.execute_tool("cancel_dark_factory_demand", {"ticket_id": "JRV-03"})
+        assert not cancel_res.is_error
+        assert cancel_res.output.get("status") == "cancelled"
+
+        # Test deduplicate_dark_factory_demands
+        dedup_res = await assistant.mcp.execute_tool("deduplicate_dark_factory_demands", {"project_id": "jarvis"})
+        assert not dedup_res.is_error
+        assert dedup_res.output.get("cancelled_count") == 1
 
     asyncio.run(_run())
 

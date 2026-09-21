@@ -128,3 +128,77 @@ def test_google_gemini_generation_success():
 
     asyncio.run(_run())
 
+
+def test_extract_tool_calls_raw_concatenated_json():
+    from jarvis.core.models import extract_tool_calls_from_text
+
+    raw_text = (
+        '{"name": "search_second_brain", "arguments": {"query": "mansão do lago receita mensal"}} '
+        '{"name": "recall_memory", "arguments": {"query": "operador mansão do lago"}} '
+        '{"name": "get_telemetry_summary", "arguments": {}}'
+    )
+    tools, clean = extract_tool_calls_from_text(raw_text)
+    assert tools is not None
+    assert len(tools) == 3
+    assert tools[0]["function"]["name"] == "search_second_brain"
+    assert tools[1]["function"]["name"] == "recall_memory"
+    assert tools[2]["function"]["name"] == "get_telemetry_summary"
+    assert clean == ""
+
+
+def test_extract_tool_calls_tags_and_markdown():
+    from jarvis.core.models import extract_tool_calls_from_text
+
+    tag_text = '<tool_call>{"name": "recall_memory", "arguments": {"query": "teste"}}</tool_call>'
+    tools1, clean1 = extract_tool_calls_from_text(tag_text)
+    assert tools1 is not None
+    assert len(tools1) == 1
+    assert tools1[0]["function"]["name"] == "recall_memory"
+
+    md_text = '```json\n[{"name": "recall_memory", "arguments": {"query": "teste"}}]\n```'
+    tools2, clean2 = extract_tool_calls_from_text(md_text)
+    assert tools2 is not None
+    assert len(tools2) == 1
+    assert tools2[0]["function"]["name"] == "recall_memory"
+
+
+def test_ollama_raw_json_tool_calls_auto_extracted():
+    async def _run():
+        def mock_handler(request: httpx.Request):
+            if request.url.path == "/api/chat":
+                # Emulate Qwen returning raw JSON in message content and tool_calls as None
+                raw_json = (
+                    '{"name": "search_second_brain", "arguments": {"query": "mansão do lago"}} '
+                    '{"name": "recall_memory", "arguments": {"query": "operador"}}'
+                )
+                return httpx.Response(
+                    200,
+                    json={
+                        "message": {"role": "assistant", "content": raw_json},
+                        "prompt_eval_count": 50,
+                        "eval_count": 30,
+                    },
+                )
+            return httpx.Response(404)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        cfg = JarvisConfig(default_provider="ollama", default_local_model="qwen-code-deep:latest")
+        router = UnifiedModelRouter(config=cfg, http_client=client)
+
+        tools_schema = [
+            {"type": "function", "function": {"name": "search_second_brain"}},
+            {"type": "function", "function": {"name": "recall_memory"}},
+        ]
+        resp = await router.generate(
+            [ChatMessage(role="user", content="Mansão do Lago")],
+            tools=tools_schema,
+        )
+        assert resp.tool_calls is not None
+        assert len(resp.tool_calls) == 2
+        assert resp.tool_calls[0]["function"]["name"] == "search_second_brain"
+        assert resp.tool_calls[1]["function"]["name"] == "recall_memory"
+        # Raw JSON was consumed, so text should be empty
+        assert resp.text == ""
+
+    asyncio.run(_run())
+

@@ -37,7 +37,7 @@ SYSTEM_PROMPT = """Você é o Jarvis, um assistente pessoal executivo de alta in
 Você opera conectado aos seguintes ecossistemas:
 1. **Memória Episódica & Contexto Pessoal**: via ferramentas MCP (`store_memory_fact`, `recall_memory`, `log_decision`, `record_failed_approach`), contendo os fatos declarados pelo usuário, preferências, pessoas conhecidas, regras de negócio informadas e histórico operacional gravados no SQLite local.
 2. **Segundo Cérebro (Acervo Corporativo)**: via ferramentas MCP (`search_second_brain`, `read_second_brain_note`, `save_second_brain_note`), contendo o acervo documental formal da empresa (políticas PO/PR/PL, contratos, propostas, relatórios e arquivos estáticos).
-3. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e registro de demandas.
+3. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e gestão de demandas (`check_dark_factory_status`, `list_dark_factory_demands`, `create_dark_factory_demand`, `cancel_dark_factory_demand`, `deduplicate_dark_factory_demands`). Sempre use estas ferramentas para consultar, criar ou cancelar tickets e demandas na Dark Factory; NUNCA tente executar scripts com requisições HTTP internas ou caminhos inexistentes.
 4. **MeetingRelator & Reuniões**: via ferramentas MCP (`list_recent_meetings`, `get_meeting_details`, `search_meetings`, `sync_meetings_to_second_brain`, `dispatch_meeting_demands`, `launch_meeting_recorder`), para consultar transcrições completas de reuniões, atas, decisões tomadas, participantes e despachar itens de ação como demandas para a Dark Factory.
 5. **Agent Harness & Sandbox Determinístico**: via ferramentas MCP (`run_sandboxed_python`, `validate_execution_safety`, `get_harness_audit_log`), para executar cálculos e análises em Python em ambiente seguro com contenção de recursos, verificar segurança de caminhos/comandos e auditar eventos de segurança.
 6. **Telemetria de Tokens & Governança Orçamentária**: via ferramentas MCP (`get_telemetry_summary`, `get_budget_status`, `update_budget_policy`), para consultar o consumo financeiro em tempo real, verificar a economia acumulada ($0 local vs comercial) e controlar tetos de gastos.
@@ -47,6 +47,7 @@ Instruções Mandatórias sobre Memória e Uso de Ferramentas:
 - **Consulta à Memória Episódica (`recall_memory`)**: Sempre que o usuário perguntar sobre o que ele já te disse, sua memória ("sua memória", "o que você sabe sobre mim"), pessoas conhecidas, família, preferências pessoais ou métricas operacionais ditadas diretamente por ele, consulte a Memória Episódica (ou o bloco `[MEMÓRIA EPISÓDICA E CONTEXTO DO SEGUNDO CÉREBRO]` já injetado neste prompt). NUNCA faça busca no acervo corporativo (`search_second_brain`) para dados pessoais ou fatos operacionais declarados pelo usuário na conversa.
 - **Consulta ao Segundo Cérebro Corporativo (`search_second_brain`)**: Apenas acione `search_second_brain` quando o usuário perguntar expressamente sobre documentos, políticas internas formais (ex: PO, PR, PL), normas corporativas, contratos, apresentações institucionais ou notas técnicas do acervo da empresa. Com base nos trechos reais recuperados, cite códigos de documentos (ex: PO-CORP-007) e seções.
 - **Governança Orçamentária e Tetos (`update_budget_policy`)**: Sempre que o usuário solicitar ajuste, restauração ou mudança de limites diários ou mensais de orçamento ou circuit breaker (ex: "atualize o limite diário de volta para $2"), acione a ferramenta `update_budget_policy` para efetivar imediatamente a mudança no SQLite persistente.
+- **Gestão de Demandas da Dark Factory**: Para consultar tickets do backlog, use `list_dark_factory_demands`. Para criar novos tickets, use `create_dark_factory_demand`. Para cancelar ou eliminar demandas repetidas, use `cancel_dark_factory_demand` ou `deduplicate_dark_factory_demands`. NUNCA use `run_sandboxed_python` para tentar fazer requisições a APIs internas do DarkHub.
 
 Diretrizes de Comunicação e Resposta (Dual-Channel Output):
 - **Resumo Falado Inicial**: Inicie sempre sua resposta com 1 ou 2 frases executivas, diretas e afirmativas. Esse primeiro trecho será sintetizado em voz para o operador.
@@ -153,6 +154,56 @@ class JarvisAssistant:
             handler=self._handle_check_darkfac_status,
         )
 
+        # Tool 3: List Demands in DarkHub
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="list_dark_factory_demands",
+                description="Lista todas as demandas e tickets no backlog da Dark Factory / DarkHub. Permite filtrar por project_id (ex: jarvis, darkfac).",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "ID do projeto (ex: jarvis, darkfac)"},
+                    },
+                },
+                server_name="dark_factory",
+            ),
+            handler=self._handle_list_darkfac_demands,
+        )
+
+        # Tool 4: Cancel Demand in DarkHub
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="cancel_dark_factory_demand",
+                description="Cancela ou desativa uma demanda no backlog da Dark Factory pelo seu ID (ex: JRV-03, JRV-04, USR-01), removendo-a do fluxo de trabalho ativo.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "ticket_id": {"type": "string", "description": "Identificador único do ticket a ser cancelado (ex: JRV-03)"},
+                        "notes": {"type": "string", "description": "Motivo opcional do cancelamento"},
+                    },
+                    "required": ["ticket_id"],
+                },
+                server_name="dark_factory",
+            ),
+            handler=self._handle_cancel_darkfac_demand,
+        )
+
+        # Tool 5: Deduplicate Demands in DarkHub
+        self.mcp.register_builtin_tool(
+            MCPTool(
+                name="deduplicate_dark_factory_demands",
+                description="Analisa o backlog da Dark Factory, localiza demandas duplicadas com o mesmo título em um projeto e cancela automaticamente as repetições, preservando apenas a primeira instância.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "default": "jarvis", "description": "ID do projeto a verificar e deduplicar (padrão: jarvis)"},
+                    },
+                },
+                server_name="dark_factory",
+            ),
+            handler=self._handle_deduplicate_darkfac_demands,
+        )
+
     def _handle_create_darkfac_demand(self, args: Dict[str, Any]) -> Any:
         import asyncio
 
@@ -184,6 +235,53 @@ class JarvisAssistant:
             return res.model_dump()
         except Exception as exc:
             return {"status": "offline", "error": str(exc)}
+
+    def _handle_list_darkfac_demands(self, args: Dict[str, Any]) -> Any:
+        import asyncio
+
+        proj = args.get("project_id")
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    demands = pool.submit(asyncio.run, self.darkfac.list_demands(project_id=proj)).result()
+                    return [d.model_dump() for d in demands]
+            demands = loop.run_until_complete(self.darkfac.list_demands(project_id=proj))
+            return [d.model_dump() for d in demands]
+        except Exception as exc:
+            return {"status": "error", "message": f"Erro ao listar demandas: {exc}"}
+
+    def _handle_cancel_darkfac_demand(self, args: Dict[str, Any]) -> Any:
+        import asyncio
+
+        ticket_id = args.get("ticket_id", "")
+        notes = args.get("notes", "Cancelada a pedido do usuário via Jarvis")
+        if not ticket_id:
+            return {"status": "error", "message": "ticket_id é obrigatório."}
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    return pool.submit(asyncio.run, self.darkfac.cancel_demand(ticket_id, notes=notes)).result()
+            return loop.run_until_complete(self.darkfac.cancel_demand(ticket_id, notes=notes))
+        except Exception as exc:
+            return {"status": "error", "message": f"Erro ao cancelar demanda: {exc}"}
+
+    def _handle_deduplicate_darkfac_demands(self, args: Dict[str, Any]) -> Any:
+        import asyncio
+
+        proj = args.get("project_id", "jarvis")
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    return pool.submit(asyncio.run, self.darkfac.deduplicate_demands(project_id=proj)).result()
+            return loop.run_until_complete(self.darkfac.deduplicate_demands(project_id=proj))
+        except Exception as exc:
+            return {"status": "error", "message": f"Erro ao deduplicar demandas: {exc}"}
 
     def _register_memory_mcp_tools(self) -> None:
         """Expose Episodic Memory and Second Brain actions as MCP tools."""
@@ -1006,12 +1104,12 @@ class JarvisAssistant:
             # Execute tool calls if returned by model
             if resp.tool_calls:
                 for tcall in resp.tool_calls:
-                    fn = tcall.get("function", {})
+                    fn = tcall.get("function") if isinstance(tcall.get("function"), dict) else tcall
                     fn_name = fn.get("name")
                     fn_args = {}
                     try:
                         raw_args = fn.get("arguments", "{}")
-                        fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                        fn_args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
                     except Exception:
                         pass
 
@@ -1067,24 +1165,49 @@ class JarvisAssistant:
                         )
                     tool_names = [t.get("tool", "") for t in tools_executed]
                     is_memory_tool = any(tn in ["store_memory_fact", "recall_memory", "log_decision"] for tn in tool_names)
-                    assistant_msg = "Acessando a memória episódica persistente..." if is_memory_tool else "Consultando o acervo do Segundo Cérebro..."
+                    is_darkfac_tool = any(
+                        tn in [
+                            "check_dark_factory_status",
+                            "create_dark_factory_demand",
+                            "list_dark_factory_demands",
+                            "cancel_dark_factory_demand",
+                            "deduplicate_dark_factory_demands",
+                        ]
+                        for tn in tool_names
+                    )
+
                     if is_memory_tool:
+                        assistant_msg = "Acessando a memória episódica persistente..."
                         user_directive = (
                             f"[Evidências e registros da Memória Episódica]:\n"
                             f"{chr(10).join(tool_context_blocks)}\n\n"
                             f"Com base nos dados da memória episódica acima, responda à solicitação do usuário com clareza, "
                             f"fornecendo a informação solicitada ou confirmando o armazenamento com precisão."
                         )
+                    elif is_darkfac_tool:
+                        assistant_msg = "Consultando a telemetria e o backlog da Dark Factory..."
+                        user_directive = (
+                            f"[Status e registros do DarkHub / Dark Factory]:\n"
+                            f"{chr(10).join(tool_context_blocks)}\n\n"
+                            f"Com base nas informações do DarkHub acima, responda ao usuário de forma executiva, "
+                            f"detalhando o status das demandas, cancelamentos ou criação de tickets com precisão."
+                        )
                     else:
+                        assistant_msg = "Consultando ferramentas e acervo documental..."
                         user_directive = (
                             f"[Evidências e trechos reais retornados pelas ferramentas]:\n"
                             f"{chr(10).join(tool_context_blocks)}\n\n"
                             f"Com base exclusiva nos dados acima, responda à pergunta do usuário com precisão, "
                             f"citando as fontes, nomes de arquivos e seções encontradas."
                         )
+
+                    clean_assistant_text = (resp.text or "").strip()
+                    if not clean_assistant_text or clean_assistant_text.startswith("{") or "tool_call" in clean_assistant_text:
+                        clean_assistant_text = assistant_msg
+
                     messages.append(ChatMessage(
                         role="assistant",
-                        content=resp.text or assistant_msg,
+                        content=clean_assistant_text,
                     ))
                     messages.append(ChatMessage(
                         role="user",

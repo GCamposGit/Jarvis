@@ -116,3 +116,25 @@ def test_audio_transcribe_endpoint():
 
     asyncio.run(_run())
 
+
+def test_darkfac_cancel_and_deduplicate_endpoints():
+    async def _run():
+        from unittest.mock import AsyncMock
+
+        cfg = JarvisConfig()
+        app = create_app(cfg)
+
+        app.state.darkfac.cancel_demand = AsyncMock(return_value={"id": "JRV-03", "status": "cancelled"})
+        app.state.darkfac.deduplicate_demands = AsyncMock(return_value={"status": "success", "cancelled_count": 1})
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+            cancel_resp = await ac.post("/api/darkfac/demands/JRV-03/cancel")
+            assert cancel_resp.status_code == 200
+            assert cancel_resp.json().get("status") == "cancelled"
+
+            dedup_resp = await ac.post("/api/darkfac/demands/deduplicate?project_id=jarvis")
+            assert dedup_resp.status_code == 200
+            assert dedup_resp.json().get("cancelled_count") == 1
+
+    asyncio.run(_run())
+

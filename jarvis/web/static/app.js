@@ -637,15 +637,29 @@ function closeNewDemandModal() {
   document.getElementById('modal-demand').classList.add('hidden');
 }
 
+let isSubmittingDemand = false;
+
 async function handleDemandSubmit(e) {
   e.preventDefault();
+  if (isSubmittingDemand) return;
+
   const proj = document.getElementById('demand-project').value;
   const title = document.getElementById('demand-title').value.trim();
   const problem = document.getElementById('demand-problem').value.trim();
 
   if (!title) return;
 
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const originalBtnText = submitBtn ? submitBtn.innerText : 'Registrar Demanda';
+
   try {
+    isSubmittingDemand = true;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Registrando...';
+      submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
     const res = await fetch('/api/darkfac/demands', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -657,17 +671,29 @@ async function handleDemandSubmit(e) {
     });
 
     if (res.ok) {
+      const data = await res.json();
       closeNewDemandModal();
       document.getElementById('demand-title').value = '';
       document.getElementById('demand-problem').value = '';
       refreshDemands();
-      appendMessage('assistant', `✅ **Demanda registrada com sucesso no DarkHub!**\n- **Título**: ${title}\n- **Projeto**: \`${proj}\``);
+      if (data.deduplicated) {
+        appendMessage('assistant', `ℹ️ **Demanda já existente no DarkHub (${data.id})!**\n- **Título**: ${title}\n- **Projeto**: \`${proj}\`\n- **Status**: \`${data.status}\` (duplicação prevenida)`);
+      } else {
+        appendMessage('assistant', `✅ **Demanda registrada com sucesso no DarkHub!**\n- **Título**: ${title}\n- **Projeto**: \`${proj}\``);
+      }
     } else {
       const err = await res.json();
       alert(`Erro ao registrar demanda: ${JSON.stringify(err)}`);
     }
   } catch (err) {
     alert(`Erro de rede ao enviar demanda: ${err.message}`);
+  } finally {
+    isSubmittingDemand = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = originalBtnText;
+      submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
   }
 }
 
