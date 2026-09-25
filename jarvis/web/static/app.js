@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initTTS();
   checkHealth();
   refreshDemands();
+  loadDemandProjects();
   loadMCPTools();
   refreshTelemetry();
   setInterval(checkHealth, 30000);
@@ -583,6 +584,29 @@ async function checkHealth() {
   }
 }
 
+async function loadDemandProjects() {
+  const select = document.getElementById('demand-project');
+  if (!select) return;
+  try {
+    const res = await fetch('/api/darkfac/projects');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const projects = await res.json();
+    if (!Array.isArray(projects) || projects.length === 0) return;
+    const previous = select.value;
+    select.innerHTML = projects
+      .map(project => '<option value="' + escapeHtml(project.id) + '">' +
+        escapeHtml(project.name) + ' (' + escapeHtml(project.id) + ')</option>')
+      .join('');
+    select.value = projects.some(project => project.id === previous)
+      ? previous
+      : projects.some(project => project.id === 'jarvis')
+        ? 'jarvis'
+        : projects[0].id;
+  } catch (err) {
+    console.warn('Could not load Dark Factory projects:', err);
+  }
+}
+
 async function refreshDemands() {
   const container = document.getElementById('demands-list');
   try {
@@ -676,11 +700,11 @@ async function handleDemandSubmit(e) {
       document.getElementById('demand-title').value = '';
       document.getElementById('demand-problem').value = '';
       refreshDemands();
-      if (data.deduplicated) {
-        appendMessage('assistant', `ℹ️ **Demanda já existente no DarkHub (${data.id})!**\n- **Título**: ${title}\n- **Projeto**: \`${proj}\`\n- **Status**: \`${data.status}\` (duplicação prevenida)`);
-      } else {
-        appendMessage('assistant', `✅ **Demanda registrada com sucesso no DarkHub!**\n- **Título**: ${title}\n- **Projeto**: \`${proj}\``);
-      }
+      appendMessage(
+        'assistant',
+        'Demanda ' + data.demand_id + ' aceita no projeto ' + data.project_id +
+        '; execução ' + data.run_id + ' e job inicial ' + data.initial_job_id + ' enfileirados.'
+      );
     } else {
       const err = await res.json();
       alert(`Erro ao registrar demanda: ${JSON.stringify(err)}`);

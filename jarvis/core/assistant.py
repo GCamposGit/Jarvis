@@ -37,7 +37,7 @@ SYSTEM_PROMPT = """Você é o Jarvis, um assistente pessoal executivo de alta in
 Você opera conectado aos seguintes ecossistemas:
 1. **Memória Episódica & Contexto Pessoal**: via ferramentas MCP (`store_memory_fact`, `recall_memory`, `log_decision`, `record_failed_approach`), contendo os fatos declarados pelo usuário, preferências, pessoas conhecidas, regras de negócio informadas e histórico operacional gravados no SQLite local.
 2. **Segundo Cérebro (Acervo Corporativo)**: via ferramentas MCP (`search_second_brain`, `read_second_brain_note`, `save_second_brain_note`), contendo o acervo documental formal da empresa (políticas PO/PR/PL, contratos, propostas, relatórios e arquivos estáticos).
-3. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e gestão de demandas (`check_dark_factory_status`, `list_dark_factory_demands`, `create_dark_factory_demand`, `cancel_dark_factory_demand`, `deduplicate_dark_factory_demands`). Sempre use estas ferramentas para consultar, criar ou cancelar tickets e demandas na Dark Factory; NUNCA tente executar scripts com requisições HTTP internas ou caminhos inexistentes.
+3. **Dark Factory**: via DarkHub, para telemetria da fábrica autônoma de software, inspeção de backlog e gestão de demandas (`check_dark_factory_status`, `list_dark_factory_demands`, `create_dark_factory_demand`, `cancel_dark_factory_demand`, `deduplicate_dark_factory_demands`). Sempre use estas ferramentas para consultar, criar ou cancelar demandas. Ao criar, preserve o projeto indicado pelo usuário; se ele não indicar um destino, use jarvis. Confirme o enfileiramento somente quando a resposta trouxer run_id; NUNCA tente executar scripts com requisições HTTP internas ou caminhos inexistentes.
 4. **MeetingRelator & Reuniões**: via ferramentas MCP (`list_recent_meetings`, `get_meeting_details`, `search_meetings`, `sync_meetings_to_second_brain`, `dispatch_meeting_demands`, `launch_meeting_recorder`), para consultar transcrições completas de reuniões, atas, decisões tomadas, participantes e despachar itens de ação como demandas para a Dark Factory.
 5. **Agent Harness & Sandbox Determinístico**: via ferramentas MCP (`run_sandboxed_python`, `validate_execution_safety`, `get_harness_audit_log`), para executar cálculos e análises em Python em ambiente seguro com contenção de recursos, verificar segurança de caminhos/comandos e auditar eventos de segurança.
 6. **Telemetria de Tokens & Governança Orçamentária**: via ferramentas MCP (`get_telemetry_summary`, `get_budget_status`, `update_budget_policy`), para consultar o consumo financeiro em tempo real, verificar a economia acumulada ($0 local vs comercial) e controlar tetos de gastos.
@@ -134,7 +134,7 @@ class JarvisAssistant:
                     "properties": {
                         "title": {"type": "string", "description": "Título claro e objetivo da demanda"},
                         "problem_statement": {"type": "string", "description": "Descrição do problema ou objetivo"},
-                        "project_id": {"type": "string", "default": "darkfac", "description": "ID do projeto"},
+                        "project_id": {"type": "string", "default": "jarvis", "description": "ID ou nome do projeto de destino; por padrão, jarvis"},
                     },
                     "required": ["title"],
                 },
@@ -209,7 +209,7 @@ class JarvisAssistant:
 
         title = args.get("title", "")
         desc = args.get("problem_statement", title)
-        proj = args.get("project_id", "darkfac")
+        proj = args.get("project_id", "jarvis")
         # Direct sync wrapper for the async call
         try:
             loop = asyncio.get_event_loop()

@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from jarvis.core.assistant import AssistantTurnResult, JarvisAssistant
 from jarvis.core.audio import AudioTranscriptionEngine, TranscriptionResult
 from jarvis.core.config import JarvisConfig, get_config
-from jarvis.core.darkfac import DarkDemandSummary, DarkFactoryClient, DarkHubStatus
+from jarvis.core.darkfac import DarkDemandSummary, DarkFactoryClient, DarkFactoryProject, DarkHubStatus
 from jarvis.core.mcp import MCPManager, MCPTool, MCPToolResult
 from jarvis.core.models import ChatMessage, UnifiedModelRouter
 
@@ -38,7 +38,7 @@ class ChatRequest(BaseModel):
 class CreateDemandRequest(BaseModel):
     title: str = Field(..., min_length=3)
     problem_statement: str = ""
-    project_id: str = "darkfac"
+    project_id: str = "jarvis"
     acceptance_criteria: List[str] = Field(default_factory=list)
 
 
@@ -186,14 +186,24 @@ def create_app(config: Optional[JarvisConfig] = None) -> FastAPI:
     async def get_darkfac_demands(project_id: Optional[str] = None) -> List[DarkDemandSummary]:
         return await darkfac_client.list_demands(project_id=project_id)
 
+    @app.get("/api/darkfac/projects", response_model=List[DarkFactoryProject])
+    async def get_darkfac_projects() -> List[DarkFactoryProject]:
+        return await darkfac_client.list_projects()
+
     @app.post("/api/darkfac/demands")
     async def create_darkfac_demand(req: CreateDemandRequest) -> Dict[str, Any]:
-        return await darkfac_client.create_demand(
+        result = await darkfac_client.create_demand(
             title=req.title,
             problem_statement=req.problem_statement,
             project_id=req.project_id,
             acceptance_criteria=req.acceptance_criteria,
         )
+        if "error" in result:
+            error_status = result.get("status_code", status.HTTP_502_BAD_GATEWAY)
+            if not isinstance(error_status, int) or not 400 <= error_status < 600:
+                error_status = status.HTTP_502_BAD_GATEWAY
+            raise HTTPException(status_code=error_status, detail=result["error"])
+        return result
 
     @app.post("/api/darkfac/demands/{ticket_id}/cancel")
     async def cancel_darkfac_demand(ticket_id: str, notes: Optional[str] = None) -> Dict[str, Any]:

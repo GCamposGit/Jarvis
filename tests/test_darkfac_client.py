@@ -70,64 +70,112 @@ def test_darkhub_list_demands():
     asyncio.run(_run())
 
 
-def test_darkhub_create_demand():
+def test_darkhub_list_projects():
     async def _run():
         def mock_handler(request: httpx.Request):
-            if request.url.path == "/api/demands/next-id":
-                return httpx.Response(200, json={"next_id": "USR-42"})
-            if request.url.path == "/api/demands/tickets" and request.method == "POST":
-                return httpx.Response(
-                    201,
-                    json={
-                        "id": "USR-42",
-                        "title": "Criar novo módulo",
-                        "status": "planned",
-                    },
-                )
+            if request.url.path == "/api/projects":
+                return httpx.Response(200, json=[
+                    {"id": "jarvis", "name": "Jarvis (AI Assistant)", "description": "Jarvis"},
+                    {"id": "site-ggcampos", "name": "Site Pessoal (ATRIUM)", "description": "Site"},
+                ])
             return httpx.Response(404)
-
         client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
-        df = DarkFactoryClient(http_client=client)
-
-        res = await df.create_demand(
-            title="Criar novo módulo",
-            problem_statement="Necessidade de expansão",
-            project_id="jarvis",
-        )
-        assert res.get("id") == "USR-42"
-        assert res.get("title") == "Criar novo módulo"
-
+        projects = await DarkFactoryClient(http_client=client).list_projects()
+        assert [project.id for project in projects] == ["jarvis", "site-ggcampos"]
     asyncio.run(_run())
 
 
-def test_darkhub_create_demand_deduplication():
+def test_darkhub_create_demand_uses_autonomous_intake_and_canonical_project():
     async def _run():
         def mock_handler(request: httpx.Request):
-            if request.url.path == "/api/demands/tickets" and request.method == "GET":
-                return httpx.Response(
-                    200,
-                    json=[
-                        {
-                            "id": "JRV-02",
-                            "title": "Tabela para configurar parâmetros",
-                            "project_id": "jarvis",
-                            "status": "planned",
-                            "origin": "user",
-                        }
-                    ],
-                )
+            if request.url.path == "/api/projects":
+                return httpx.Response(200, json=[{"id": "site-ggcampos", "name": "Site Pessoal (ATRIUM)", "description": "Site"}])
+            if request.url.path == "/api/demands/intake" and request.method == "POST":
+                body = request.read().decode("utf-8")
+                assert '"project_id":"site-ggcampos"' in body
+                assert request.headers.get("Idempotency-Key", "").startswith("jarvis-")
+                return httpx.Response(202, json={
+                    "demand_id": "dem-42", "demand_version": "1.0",
+                    "run_id": "run-42", "initial_job_id": "job-42",
+                    "mode": "autonomous", "committed_at": "2026-09-25T12:00:00Z",
+                })
+            return httpx.Response(404)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        df = DarkFactoryClient(http_client=client)
+        result = await df.create_demand("Criar novo módulo", "Necessidade de expansão", project_id="ATRIUM")
+        assert result["id"] == "dem-42"
+        assert result["project_id"] == "site-ggcampos"
+        assert result["status"] == "queued"
+        assert result["run_id"] == "run-42"
+        assert result["initial_job_id"] == "job-42"
+    asyncio.run(_run())
+
+
+def test_darkhub_create_demand_reuses_stable_idempotency_key():
+    async def _run():
+        keys = []
+        def mock_handler(request: httpx.Request):
+            if request.url.path == "/api/projects":
+                return httpx.Response(200, json=[{"id": "jarvis", "name": "Jarvis", "description": ""}])
+            if request.url.path == "/api/demands/intake":
+                keys.append(request.headers["Idempotency-Key"])
+                return httpx.Response(202, json={
+                    "demand_id": "dem-43", "demand_version": "1.0",
+                    "run_id": "run-43", "initial_job_id": "job-43",
+                    "mode": "autonomous", "committed_at": "2026-09-25T12:00:00Z",
+                })
+            return httpx.Response(404)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        df = DarkFactoryClient(http_client=client)
+        first = await df.create_demand("Nova capacidade", "Detalhes", project_id="jarvis")
+        replay = await df.create_demand("Nova capacidade", "Detalhes", project_id="jarvis")
+        assert first["run_id"] == replay["run_id"] == "run-43"
+        assert len(keys) == 2 and keys[0] == keys[1]
+    asyncio.run(_run())
+
+
+def test_darkhub_create_demand_rejects_unknown_project():
+    async def _run():
+        submitted = False
+        def mock_handler(request: httpx.Request):
+            nonlocal submitted
+            if request.url.path == "/api/projects":
+                return httpx.Response(200, json=[{"id": "jarvis", "name": "Jarvis", "description": ""}])
+            if request.url.path == "/api/demands/intake":
+                submitted = True
+            return httpx.Response(404)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        result = await DarkFactoryClient(http_client=client).create_demand("Nova capacidade", project_id="nao-existe")
+        assert result["status_code"] == 422 and not submitted
+    asyncio.run(_run())
+
+
+def test_darkhub_create_demand_dispatches_same_title_from_legacy_backlog():
+    async def _run():
+        calls = []
+
+        def mock_handler(request: httpx.Request):
+            if request.url.path == "/api/projects":
+                return httpx.Response(200, json=[{"id": "jarvis", "name": "Jarvis", "description": ""}])
+            if request.url.path == "/api/demands/intake" and request.method == "POST":
+                calls.append(request)
+                return httpx.Response(202, json={
+                    "demand_id": "dem-44", "demand_version": "1.0",
+                    "run_id": "run-44", "initial_job_id": "job-44",
+                    "mode": "autonomous", "committed_at": "2026-09-25T12:00:00Z",
+                })
             return httpx.Response(404)
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
         df = DarkFactoryClient(http_client=client)
-
-        res = await df.create_demand(
+        result = await df.create_demand(
             title="Tabela para configurar parâmetros",
-            problem_statement="Tentando criar duplicata",
+            problem_statement="Demanda que já existia no backlog sem execução",
             project_id="jarvis",
         )
-        assert res.get("id") == "JRV-02"
-        assert res.get("deduplicated") is True
+        assert result["status"] == "queued"
+        assert result["run_id"] == "run-44"
+        assert len(calls) == 1
 
     asyncio.run(_run())
 
