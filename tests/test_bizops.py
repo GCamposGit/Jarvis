@@ -97,13 +97,18 @@ async def test_bizops_engine_hitl_approval_flow(tmp_path: Path):
     def mock_handler(request: httpx.Request):
         if request.url.path == "/api/cloud/status":
             return httpx.Response(200, json={"status": "active"})
-        if request.url.path == "/api/demands/tickets":
-            if request.method == "GET":
-                return httpx.Response(200, json=[])
-            elif request.method == "POST":
-                return httpx.Response(200, json={"demand_id": "DEM-999", "status": "created"})
-        if request.url.path == "/api/demands/next-id":
-            return httpx.Response(200, json={"next_id": "DEM-999"})
+        if request.url.path == "/api/projects":
+            return httpx.Response(200, json=[
+                {"id": "jarvis", "name": "Jarvis", "description": ""},
+                {"id": "darkfac", "name": "DarkFac", "description": ""},
+            ])
+        if request.url.path == "/api/demands/intake" and request.method == "POST":
+            return httpx.Response(202, json={
+                "demand_id": "DEM-999",
+                "run_id": "run-999",
+                "initial_job_id": "job-999",
+                "mode": "autonomous",
+            })
         return httpx.Response(404)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))

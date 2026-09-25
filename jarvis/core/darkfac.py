@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
+import unicodedata
 from typing import Any, Dict, List, Optional
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +25,14 @@ class DarkHubStatus(BaseModel):
     status_code: Optional[int] = None
     cloud_status: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+
+
+class DarkFactoryProject(BaseModel):
+    """Registered project destination exposed by DarkHub."""
+
+    id: str
+    name: str
+    description: str = ""
 
 
 class DarkDemandSummary(BaseModel):
@@ -97,73 +108,94 @@ class DarkFactoryClient:
             logger.warning("Failed to fetch demands from DarkHub: %s", exc)
         return []
 
+    async def list_projects(self) -> List[DarkFactoryProject]:
+        """Fetch the canonical project registry from DarkHub."""
+        try:
+            resp = await self._client.get(f"{self.base_url}/api/projects")
+            if resp.status_code != 200:
+                logger.warning("Failed to fetch DarkHub projects: HTTP %s", resp.status_code)
+                return []
+            return [DarkFactoryProject.model_validate(item) for item in resp.json()]
+        except Exception as exc:
+            logger.warning("Failed to fetch DarkHub projects: %s", exc)
+            return []
+
+    @staticmethod
+    def _normalize_project_name(value: str) -> str:
+        normalized = unicodedata.normalize("NFKD", value).casefold()
+        return "".join(character for character in normalized if character.isalnum())
+
+    @classmethod
+    def _project_matches(cls, project: DarkFactoryProject, requested: str) -> bool:
+        requested_key = cls._normalize_project_name(requested.strip())
+        if not requested_key:
+            return False
+        candidates = {
+            cls._normalize_project_name(project.id),
+            cls._normalize_project_name(project.name),
+        }
+        candidates.update(
+            cls._normalize_project_name(alias)
+            for alias in re.findall(r"\(([^)]+)\)", project.name)
+        )
+        return requested_key in candidates
+
     async def create_demand(
         self,
         title: str,
         problem_statement: str = "",
         core_journey: str = "",
-        project_id: str = "darkfac",
+        project_id: str = "jarvis",
         acceptance_criteria: Optional[List[str]] = None,
         non_goals: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Create a new formal demand/ticket in the Dark Factory backlog."""
-        # Check if an active demand with identical title already exists in the project
-        clean_title = title.strip().lower()
-        try:
-            existing_demands = await self.list_demands(project_id=project_id)
-            for ed in existing_demands:
-                if ed.title.strip().lower() == clean_title and ed.status not in ("cancelled", "completed"):
-                    logger.info("Demand '%s' already exists as %s with status %s. Returning existing.", title, ed.id, ed.status)
-                    return {
-                        "id": ed.id,
-                        "title": ed.title,
-                        "project_id": ed.project_id,
-                        "status": ed.status,
-                        "deduplicated": True,
-                        "message": f"Demanda já registrada no backlog ({ed.id}). Evitada duplicação.",
-                    }
-        except Exception as exc:
-            logger.debug("Deduplication pre-check failed: %s", exc)
+        """Submit a demand through DarkHub's transactional autonomous intake."""
+        clean_title = title.strip()
+        projects = await self.list_projects()
+        if not projects:
+            return {"error": "Não foi possível consultar o registro de projetos da Dark Factory.", "status_code": 502}
 
-        # 1. Fetch next ticket ID
-        next_id = f"USR-{int(httpx._utils.get_environment_proxies().get('dummy', 1))}"
-        try:
-            id_resp = await self._client.get(
-                f"{self.base_url}/api/demands/next-id",
-                params={"project_id": project_id},
-            )
-            if id_resp.status_code == 200:
-                next_id = id_resp.json().get("next_id", next_id)
-        except Exception:
-            pass
+        project = next((candidate for candidate in projects if self._project_matches(candidate, project_id)), None)
+        if project is None:
+            return {"error": f"Projeto de destino '{project_id}' não existe no registro da Dark Factory.", "status_code": 422}
 
-        journey = [core_journey] if isinstance(core_journey, str) and core_journey else (core_journey or ["Submitted through Jarvis Assistant"])
-        ticket_payload = {
-            "id": next_id,
-            "project_id": project_id,
-            "title": title,
-            "origin": "user",
-            "status": "planned",
-            "item_type": "feature",
-            "lifecycle_stage": "execution",
-            "horizon": "now",
-            "problem_statement": problem_statement or title,
-            "core_journey": journey,
-            "acceptance_criteria": acceptance_criteria or ["Harness passes with deterministic verification"],
+        intake_payload = {
+            "project_id": project.id,
+            "title": clean_title,
+            "problem_statement": problem_statement or clean_title,
+            "core_journey": core_journey or "Demanda submetida pela interface do Jarvis.",
             "non_goals": non_goals or [],
+            "acceptance_criteria": acceptance_criteria or [],
         }
-
+        identity = f"{project.id.casefold()}:{clean_title.casefold()}"
+        idempotency_key = f"jarvis-{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
         try:
             resp = await self._client.post(
-                f"{self.base_url}/api/demands/tickets",
-                json=ticket_payload,
+                f"{self.base_url}/api/demands/intake",
+                json=intake_payload,
+                headers={"Idempotency-Key": idempotency_key},
             )
-            if resp.status_code in (200, 201):
-                return resp.json()
-            return {"error": f"Failed with HTTP {resp.status_code}: {resp.text}", "payload": ticket_payload}
+            if resp.status_code != 202:
+                detail = resp.json().get("detail", resp.text)
+                return {"error": f"DarkHub recusou a demanda (HTTP {resp.status_code}): {detail}", "status_code": resp.status_code}
+            receipt = resp.json()
+            if receipt.get("mode") != "autonomous" or not receipt.get("run_id") or not receipt.get("initial_job_id"):
+                return {"error": "DarkHub aceitou a demanda sem confirmar a execução autônoma e o job inicial.", "status_code": 502}
+            demand_id = receipt["demand_id"]
+            return {
+                "id": demand_id,
+                "demand_id": demand_id,
+                "title": clean_title,
+                "project_id": project.id,
+                "status": "queued",
+                "mode": receipt["mode"],
+                "run_id": receipt["run_id"],
+                "initial_job_id": receipt["initial_job_id"],
+                "committed_at": receipt.get("committed_at"),
+            }
         except Exception as exc:
             logger.error("Error creating demand in DarkHub: %s", exc)
-            return {"error": str(exc), "payload": ticket_payload}
+            return {"error": str(exc), "status_code": 502}
 
     async def update_demand_status(
         self,

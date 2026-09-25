@@ -138,3 +138,21 @@ def test_darkfac_cancel_and_deduplicate_endpoints():
 
     asyncio.run(_run())
 
+
+def test_darkfac_projects_endpoint_and_create_error_status():
+    async def _run():
+        from unittest.mock import AsyncMock
+        app = create_app(JarvisConfig())
+        app.state.darkfac.list_projects = AsyncMock(
+            return_value=[{"id": "jarvis", "name": "Jarvis", "description": ""}]
+        )
+        app.state.darkfac.create_demand = AsyncMock(
+            return_value={"error": "ControlStore indisponível", "status_code": 503}
+        )
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+            projects = await ac.get("/api/darkfac/projects")
+            assert projects.status_code == 200 and projects.json()[0]["id"] == "jarvis"
+            response = await ac.post("/api/darkfac/demands", json={"title": "Demanda de teste", "project_id": "jarvis"})
+            assert response.status_code == 503
+            assert response.json()["detail"] == "ControlStore indisponível"
+    asyncio.run(_run())
