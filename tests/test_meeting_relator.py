@@ -303,11 +303,18 @@ async def test_meeting_relator_dispatch_action_items_and_hitl(tmp_path: Path, mo
     mem_engine = EpisodicMemoryEngine(db_path=mem_db)
 
     def mock_handler(request: httpx.Request):
-        if request.url.path == "/api/demands/tickets":
-            if request.method == "POST":
-                return httpx.Response(200, json={"demand_id": "DEM-MEETING-101", "status": "created"})
-        if request.url.path == "/api/demands/next-id":
-            return httpx.Response(200, json={"next_id": "DEM-MEETING-101"})
+        if request.url.path == "/api/projects":
+            return httpx.Response(200, json=[
+                {"id": "jarvis", "name": "Jarvis", "description": ""},
+                {"id": "darkfac", "name": "DarkFac", "description": ""},
+            ])
+        if request.url.path == "/api/demands/intake" and request.method == "POST":
+            return httpx.Response(202, json={
+                "demand_id": "DEM-MEETING-101",
+                "run_id": "run-meeting-101",
+                "initial_job_id": "job-meeting-101",
+                "mode": "autonomous",
+            })
         return httpx.Response(404)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
